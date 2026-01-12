@@ -46,6 +46,20 @@ const FlipBookView = ({
     });
   }, [currentStream, fetchMetadata]);
 
+  // Prefetch metadata for next 2 tiles
+  useEffect(() => {
+    if (isLive || !streams.length) return;
+
+    const prefetchCount = 2;
+    for (let i = 1; i <= prefetchCount; i++) {
+      const nextIdx = currentIndex + i;
+      if (nextIdx < streams.length) {
+        const nextStream = streams[nextIdx];
+        fetchMetadata(nextStream).catch(() => {});
+      }
+    }
+  }, [currentIndex, streams, fetchMetadata, isLive]);
+
   const handlePrev = () => {
     if (currentIndex > 0) {
       onIndexChange(currentIndex - 1);
