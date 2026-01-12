@@ -213,10 +213,25 @@ body {
   background-color: var(--bg-hover);
 }
 
+@keyframes rainbow-border {
+  0% { border-color: #ff0000; box-shadow: 0 0 5px #ff0000; }
+  14% { border-color: #ff7f00; box-shadow: 0 0 5px #ff7f00; }
+  28% { border-color: #ffff00; box-shadow: 0 0 5px #ffff00; }
+  42% { border-color: #00ff00; box-shadow: 0 0 5px #00ff00; }
+  57% { border-color: #0000ff; box-shadow: 0 0 5px #0000ff; }
+  71% { border-color: #4b0082; box-shadow: 0 0 5px #4b0082; }
+  85% { border-color: #8b00ff; box-shadow: 0 0 5px #8b00ff; }
+  100% { border-color: #ff0000; box-shadow: 0 0 5px #ff0000; }
+}
+
 .category-item.active {
   background-color: #2c2e33;
-  color: var(--section-accent, #00d4ff);
-  border-left: 3px solid var(--section-accent, #00d4ff);
+  color: #fff;
+  border: 2px solid #ff0000;
+  border-radius: 4px;
+  animation: rainbow-border 3s linear infinite;
+  margin: 2px 8px;
+  padding-left: 24px; /* Adjust for border */
 }
 
 .content-area {
