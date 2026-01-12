@@ -10,29 +10,10 @@ import { getXcUrl, getXcLogoUrl } from './utils/xc';
 
 const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu, profileId, cacheMap, apiDebug, fetchMetadata, metadataCache, sectionType, onDownload, isFavorite, onToggleFavorite }) => {
   const [metadata, setMetadata] = useState(null);
-  const [isVisible, setIsVisible] = useState(false);
   const cardRef = useRef(null);
-  const observerRef = useRef(null);
 
   useEffect(() => {
-    observerRef.current = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        setIsVisible(true);
-        if (observerRef.current) observerRef.current.disconnect();
-      }
-    }, { rootMargin: '200px' });
-
-    if (cardRef.current) {
-      observerRef.current.observe(cardRef.current);
-    }
-
-    return () => {
-      if (observerRef.current) observerRef.current.disconnect();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (showPlot && isVisible && !metadata && (sectionType === 'vod' || sectionType === 'series')) {
+    if (showPlot && !metadata && (sectionType === 'vod' || sectionType === 'series')) {
       const id = stream.stream_id || stream.series_id;
       const cacheKey = `${sectionType}_${id}`;
 
@@ -44,7 +25,7 @@ const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu,
         });
       }
     }
-  }, [showPlot, isVisible, stream, fetchMetadata, metadata, metadataCache, sectionType]);
+  }, [showPlot, stream, fetchMetadata, metadata, metadataCache, sectionType]);
 
   const logo = stream.stream_icon || stream.cover;
   const name = stream.name || stream.title;
