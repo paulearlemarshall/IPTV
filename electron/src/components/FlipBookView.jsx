@@ -34,17 +34,28 @@ const FlipBookView = ({
 
   useEffect(() => {
     if (!currentStream) return;
-    
+
+    let isActive = true;
+
     setIsLoadingMeta(true);
     setMetadata(null);
-    
+
     fetchMetadata(currentStream).then(data => {
+      if (!isActive) return;
       setMetadata(data);
       setIsLoadingMeta(false);
     }).catch(() => {
-      setIsLoadingMeta(false);
+      if (isActive) setIsLoadingMeta(false);
     });
-  }, [currentStream, fetchMetadata]);
+
+    [prevStream, nextStream].filter(Boolean).forEach(stream => {
+      fetchMetadata(stream).catch(() => {});
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, [currentStream, prevStream, nextStream, fetchMetadata]);
 
   const handlePrev = () => {
     if (currentIndex > 0) {
