@@ -221,15 +221,6 @@ const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu,
       )}
     </div>
   );
-}, (prevProps, nextProps) => {
-  return (
-    prevProps.stream.stream_id === nextProps.stream.stream_id &&
-    prevProps.stream.series_id === nextProps.stream.series_id &&
-    prevProps.showPlot === nextProps.showPlot &&
-    prevProps.cacheMap === nextProps.cacheMap &&
-    prevProps.metadataCache === nextProps.metadataCache &&
-    prevProps.isFavorite === nextProps.isFavorite
-  );
 });
 
 function App() {
@@ -343,6 +334,31 @@ function App() {
     });
   }, [fetchStreamMetadataFromHook, selectedSection, selectedServer, currentProfile]);
 
+  const playStream = useCallback(async (stream, type = selectedSection) => {
+    if (type === 'series') {
+        fetchSeriesInfo(stream.series_id);
+        return;
+    }
+    const finalUrl = getXcUrl(stream, type);
+    if (!finalUrl) return;
+    
+    if (playerMode === 'internal') {
+        setCurrentStream({ ...stream, url: finalUrl });
+    } else if (playerMode === 'cast') {
+        const device = selectedCastDevice?.trim();
+        if (!device || device === 'None' || device === '') {
+            alert("No Chromecast selected. Please select a device from the dropdown.");
+            return;
+        }
+        window.api.castPlay(device, finalUrl, {
+            title: stream.name || stream.title,
+            images: [{ url: getXcLogoUrl(stream) }]
+        });
+    } else {
+        window.api.launchVLC(finalUrl, null, stream.name || stream.title);
+    }
+  }, [playerMode, selectedCastDevice, selectedSection, currentProfile, selectedServer, fetchSeriesInfo]);
+
   const toggleFavorite = useCallback(async (stream) => {
     const id = (stream.stream_id || stream.series_id || stream.id || "").toString();
     if (!id) return;
@@ -371,7 +387,7 @@ function App() {
   }, [currentProfile?.id]);
 
   // Download handler
-  const handleDownload = async (stream) => {
+  const handleDownload = useCallback(async (stream) => {
     const streamUrl = getXcUrl(stream);
     const streamName = stream.name || stream.title || 'Unknown';
 
@@ -407,7 +423,7 @@ function App() {
         ));
       }
     }
-  };
+  }, [currentProfile?.id, selectedSection, selectedServer]);
 
   const cancelDownload = async (downloadId) => {
     if (window.api && window.api.cancelDownload) {
@@ -536,7 +552,7 @@ function App() {
 
   // --- Helpers ---
 
-  const getXcUrl = (stream, type = selectedSection) => {
+  const getXcUrl = useCallback((stream, type = selectedSection) => {
     if (!stream || !currentProfile || !selectedServer) return null;
     const base = selectedServer.replace(/\/$/, "");
     const { username, password } = currentProfile;
@@ -550,37 +566,15 @@ function App() {
         return `${base}/${path}/${username}/${password}/${id}.${ext}`;
     }
     return null;
-  };
+  }, [currentProfile, selectedServer, selectedSection]);
 
-  const getXcLogoUrl = (stream) => {
+  const getXcLogoUrl = useCallback((stream) => {
     const rawLogo = stream.stream_icon || stream.cover;
     if (!rawLogo || !selectedServer) return rawLogo;
     if (rawLogo.startsWith('http')) return rawLogo;
     const base = selectedServer.replace(/\/$/, "");
     return `${base}${rawLogo.startsWith('/') ? '' : '/'}${rawLogo}`;
-  };
-
-  const playStream = async (stream, type = selectedSection) => {
-    if (type === 'series') {
-        fetchSeriesInfo(stream.series_id);
-        return;
-    }
-    const finalUrl = getXcUrl(stream, type);
-    if (!finalUrl) return;
-    
-    if (playerMode === 'internal') {
-        setCurrentStream({ ...stream, url: finalUrl });
-    } else if (playerMode === 'cast') {
-        const device = selectedCastDevice?.trim();
-        if (!device || device === 'None' || device === '') {
-            alert("No Chromecast selected. Please select a device from the dropdown.");
-            return;
-        }
-        window.api.castPlay(device, finalUrl);
-    } else {
-        window.api.launchVLC(finalUrl, null, stream.name || stream.title);
-    }
-  };
+  }, [selectedServer]);
 
   const handleCategoryClick = (catId) => {
     const now = Date.now();
@@ -616,7 +610,7 @@ function App() {
 
   const handleCloseContextMenu = () => setContextMenu(null);
   
-  const handleContextMenu = async (e, stream) => {
+  const handleContextMenu = useCallback(async (e, stream) => {
     e.preventDefault();
     const id = stream.stream_id || stream.series_id || stream.id;
     const isEpisode = !!stream.episode_num;
@@ -657,7 +651,7 @@ function App() {
     } else {
         setContextMenu(prev => ({ ...prev, isLoading: false }));
     }
-  };
+  }, [selectedSection, selectedServer, currentProfile, apiDebug]);
 
   const copyToClipboard = (text) => {
     if (text) {
@@ -932,7 +926,7 @@ function App() {
             {['vlc', 'internal', 'cast'].map(m => (
               <React.Fragment key={m}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '0.7rem' }}>
-                  <input type="radio" checked={playerMode === m} onChange={() => setPlayerMode(m)} /> 
+                  <input type="radio" name="playerMode" checked={playerMode === m} onChange={() => setPlayerMode(m)} /> 
                   <span onClick={m === 'vlc' ? handleVlcPathChange : undefined} style={{ cursor: m === 'vlc' ? 'pointer' : 'inherit' }}>{m.toUpperCase()}</span>
                 </label>
                 {m === 'cast' && playerMode === 'cast' && (
