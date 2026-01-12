@@ -212,6 +212,7 @@ function App() {
     displayCount,
     viewMode,
     activeSeason,
+    setStreams,
     setDisplayCount,
     setStatus,
     fetchCategories: fetchCategoriesFromHook,
@@ -747,6 +748,7 @@ function App() {
                     onClick={() => { 
                         setSelectedSection(s.id); 
                         setSelectedCategory(null); 
+                        setStreams([]);
                         backToList();
                         setLastCategoryClick({ id: null, timestamp: 0 });
                     }} 
