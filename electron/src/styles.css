@@ -239,14 +239,10 @@ body {
   top: -50%;
   width: 200%;
   height: 200%;
-  background-color: #1a1b1e;
-  background-repeat: no-repeat;
-  background-size: 50% 50%, 50% 50%;
-  background-position: 0 0, 100% 0, 100% 100%, 0 100%;
   background-image: conic-gradient(
     #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #8b00ff, #ff0000
   );
-  animation: rotate 4s linear infinite;
+  animation: rotate 6s linear infinite;
 }
 
 .category-item.active::after {
