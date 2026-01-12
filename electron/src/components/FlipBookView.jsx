@@ -208,19 +208,20 @@ const FlipBookView = ({
       overflow: 'hidden',
       position: 'relative'
     }}>
-      {/* Backdrop Image */}
-      {backdrop && (
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          opacity: 0.3,
-          filter: 'blur(2px)',
-          zIndex: 0,
-          transition: 'opacity 0.5s ease-in-out'
-        }}>
+      {/* Backdrop Image Container - Always in DOM for smooth transitions */}
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        opacity: (metadata && backdrop) ? 0.3 : 0,
+        filter: 'blur(2px)',
+        zIndex: 0,
+        transition: 'opacity 0.6s ease-in-out',
+        backgroundColor: '#000'
+      }}>
+        {backdrop && (
           <CachedImage
             src={backdrop}
             alt="backdrop"
@@ -233,20 +234,21 @@ const FlipBookView = ({
             cacheMap={cacheMap}
             apiDebug={apiDebug}
           />
-        </div>
-      )}
+        )}
+      </div>
+      
       {/* Dark overlay for backdrop */}
-      {backdrop && (
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'radial-gradient(circle, transparent 0%, rgba(0,0,0,0.8) 100%)',
-          zIndex: 1
-        }} />
-      )}
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'radial-gradient(circle, transparent 0%, rgba(0,0,0,0.8) 100%)',
+        zIndex: 1,
+        opacity: (metadata && backdrop) ? 1 : 0,
+        transition: 'opacity 0.6s ease-in-out'
+      }} />
 
       {/* Counter */}
       <div style={{ 
