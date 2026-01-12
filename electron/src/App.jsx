@@ -975,6 +975,7 @@ function App() {
               cacheMap={imageCacheMap}
               apiDebug={apiDebug}
               fetchMetadata={fetchStreamMetadata}
+              metadataCache={metadataCache}
               sectionColor={getSectionColor()}
               sectionType={selectedSection}
             />

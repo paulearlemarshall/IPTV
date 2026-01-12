@@ -15,6 +15,7 @@ const FlipBookView = ({
   cacheMap, 
   apiDebug,
   fetchMetadata,
+  metadataCache,
   sectionColor,
   sectionType = 'vod'
 }) => {
@@ -35,30 +36,50 @@ const FlipBookView = ({
   useEffect(() => {
     if (!currentStream) return;
     
-    setIsLoadingMeta(true);
-    setMetadata(null);
-    
-    fetchMetadata(currentStream).then(data => {
-      setMetadata(data);
-      setIsLoadingMeta(false);
-    }).catch(() => {
-      setIsLoadingMeta(false);
-    });
-  }, [currentStream, fetchMetadata]);
+    const id = currentStream.stream_id || currentStream.series_id || currentStream.id;
+    const cacheKey = `${sectionType}_${id}`;
+    const cached = metadataCache && metadataCache[cacheKey];
 
-  // Prefetch metadata for next 2 tiles
+    if (cached) {
+      setMetadata(cached);
+      setIsLoadingMeta(false);
+    } else {
+      setIsLoadingMeta(true);
+      setMetadata(null); // Fade out to clear old backdrop
+      
+      fetchMetadata(currentStream).then(data => {
+        if (data) setMetadata(data);
+        setIsLoadingMeta(false);
+      }).catch(() => {
+        setIsLoadingMeta(false);
+      });
+    }
+  }, [currentStream, fetchMetadata, sectionType, metadataCache]);
+
+  // Prefetch metadata for next 2 tiles - DEBOUNCED
   useEffect(() => {
     if (isLive || !streams.length) return;
 
-    const prefetchCount = 2;
-    for (let i = 1; i <= prefetchCount; i++) {
-      const nextIdx = currentIndex + i;
-      if (nextIdx < streams.length) {
-        const nextStream = streams[nextIdx];
-        fetchMetadata(nextStream).catch(() => {});
+    const timer = setTimeout(() => {
+      const prefetchCount = 2;
+      for (let i = 1; i <= prefetchCount; i++) {
+        const nextIdx = currentIndex + i;
+        if (nextIdx < streams.length) {
+          const nextS = streams[nextIdx];
+          const nextId = nextS.stream_id || nextS.series_id || nextS.id;
+          const cacheKey = `${sectionType}_${nextId}`;
+          
+          // Only fetch if not already in cache
+          if (!metadataCache || !metadataCache[cacheKey]) {
+            if (apiDebug) console.log(`[PREFETCH] Index ${nextIdx}: ${nextS.name || nextS.title}`);
+            fetchMetadata(nextS).catch(() => {});
+          }
+        }
       }
-    }
-  }, [currentIndex, streams, fetchMetadata, isLive]);
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timer);
+  }, [currentIndex, streams, fetchMetadata, isLive, sectionType, metadataCache, apiDebug]);
 
   const handlePrev = () => {
     if (currentIndex > 0) {
