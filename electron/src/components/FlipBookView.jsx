@@ -1,47 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Play, Star } from 'lucide-react';
 import CachedImage from './CachedImage';
-
-const StarRating = ({ rating, max = 10 }) => {
-  const stars = [];
-  const fullStars = Math.floor(rating);
-  const fractionalPart = rating % 1;
-
-  for (let i = 0; i < max; i++) {
-    if (i < fullStars) {
-      stars.push(<Star key={i} size={14} fill="#ffd43b" color="#ffd43b" />);
-    } else if (i === fullStars && fractionalPart > 0) {
-      stars.push(
-        <div key={i} style={{ position: 'relative', display: 'inline-block', lineHeight: 0 }}>
-          <Star size={14} color="#333" />
-          <div style={{ 
-            position: 'absolute', 
-            top: 0, 
-            left: 0, 
-            width: `${Math.round(fractionalPart * 100)}%`, 
-            overflow: 'hidden',
-            lineHeight: 0
-          }}>
-            <Star size={14} fill="#ffd43b" color="#ffd43b" />
-          </div>
-        </div>
-      );
-    } else {
-      stars.push(<Star key={i} size={14} color="#333" />);
-    }
-  }
-
-  return (
-    <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
-      {stars}
-      {rating > 0 && (
-        <span style={{ marginLeft: '8px', fontSize: '1rem', color: '#ffd43b', fontWeight: 'bold' }}>
-          {rating.toFixed(1)}
-        </span>
-      )}
-    </div>
-  );
-};
+import StarRating from './StarRating';
 
 const INFO_BOX_HEIGHT = 100;
 const METADATA_HEIGHT = 140;
@@ -438,7 +398,7 @@ const FlipBookView = ({
                 alignItems: 'center', 
                 justifyContent: 'space-between'
               }}>
-                {!isLive && <StarRating rating={rating} />}
+                {!isLive && <StarRating rating={rating} size={14} />}
                 {isLive && <div />}
                 <div style={{ display: 'flex', gap: '10px', color: '#909296', fontSize: '0.85rem' }}>
                   {year && <span>{year}</span>}

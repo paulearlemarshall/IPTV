@@ -4,48 +4,9 @@ import VideoPlayer from './components/VideoPlayer';
 import CachedImage from './components/CachedImage';
 import ProfileManager from './components/ProfileManager';
 import FlipBookView from './components/FlipBookView';
+import StarRating from './components/StarRating';
 import { useXCApi } from './hooks/useXCApi';
-
-const StarRating = ({ rating, max = 10 }) => {
-  const stars = [];
-  const fullStars = Math.floor(rating);
-  const fractionalPart = rating % 1;
-
-  for (let i = 0; i < max; i++) {
-    if (i < fullStars) {
-      stars.push(<Star key={i} size={10} fill="#ffd43b" color="#ffd43b" />);
-    } else if (i === fullStars && fractionalPart > 0) {
-      stars.push(
-        <div key={i} style={{ position: 'relative', display: 'inline-block', lineHeight: 0 }}>
-          <Star size={10} color="#333" />
-          <div style={{ 
-            position: 'absolute', 
-            top: 0, 
-            left: 0, 
-            width: `${Math.round(fractionalPart * 100)}%`, 
-            overflow: 'hidden',
-            lineHeight: 0
-          }}>
-            <Star size={10} fill="#ffd43b" color="#ffd43b" />
-          </div>
-        </div>
-      );
-    } else {
-      stars.push(<Star key={i} size={10} color="#333" />);
-    }
-  }
-  
-  if (rating === 0) return null;
-
-  return (
-    <div style={{ display: 'flex', gap: '1px', alignItems: 'center' }} title={`Rating: ${rating}/10`}>
-      {stars}
-      <span style={{ marginLeft: '4px', fontSize: '0.7rem', color: '#ffd43b', fontWeight: 'bold' }}>
-        {rating.toFixed(1)}
-      </span>
-    </div>
-  );
-};
+import { getXcUrl, getXcLogoUrl } from './utils/xc';
 
 const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu, profileId, cacheMap, apiDebug, fetchMetadata, metadataCache, sectionType, onDownload, isFavorite, onToggleFavorite }) => {
   const [metadata, setMetadata] = useState(null);
@@ -1157,8 +1118,8 @@ function App() {
 
       {contextMenu && (() => {
           const isEpisode = !!contextMenu.stream.episode_num;
-          const finalUrl = getXcUrl(contextMenu.stream, isEpisode ? 'episode' : selectedSection);
-          const finalLogoUrl = getXcLogoUrl(contextMenu.stream);
+          const finalUrl = getXcUrl(contextMenu.stream, isEpisode ? 'episode' : selectedSection, currentProfile, selectedServer);
+          const finalLogoUrl = getXcLogoUrl(contextMenu.stream, selectedServer);
           const info = contextMenu.info;
           return (
               <div className="context-menu" style={{ top: contextMenu.mouseY, left: contextMenu.mouseX }} onClick={e => e.stopPropagation()}>
