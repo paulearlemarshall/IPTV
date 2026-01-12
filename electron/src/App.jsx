@@ -4,6 +4,50 @@ import VideoPlayer from './components/VideoPlayer';
 import CachedImage from './components/CachedImage';
 import ProfileManager from './components/ProfileManager';
 
+const StarRating = ({ rating, max = 10 }) => {
+  const stars = [];
+  const fullStars = Math.floor(rating);
+  const fractionalPart = rating % 1;
+
+  for (let i = 0; i < max; i++) {
+    if (i < fullStars) {
+      // Full Star
+      stars.push(<Star key={i} size={10} fill="#ffd43b" color="#ffd43b" />);
+    } else if (i === fullStars && fractionalPart > 0) {
+      // Partial Star with precise clipping
+      stars.push(
+        <div key={i} style={{ position: 'relative', display: 'inline-block', lineHeight: 0 }}>
+          <Star size={10} color="#333" />
+          <div style={{ 
+            position: 'absolute', 
+            top: 0, 
+            left: 0, 
+            width: `${Math.round(fractionalPart * 100)}%`, 
+            overflow: 'hidden',
+            lineHeight: 0
+          }}>
+            <Star size={10} fill="#ffd43b" color="#ffd43b" />
+          </div>
+        </div>
+      );
+    } else {
+      // Empty Star
+      stars.push(<Star key={i} size={10} color="#333" />);
+    }
+  }
+  
+  if (rating === 0) return null;
+
+  return (
+    <div style={{ display: 'flex', gap: '1px', alignItems: 'center' }} title={`Rating: ${rating}/10`}>
+      {stars}
+      <span style={{ marginLeft: '4px', fontSize: '0.7rem', color: '#ffd43b', fontWeight: 'bold' }}>
+        {rating.toFixed(1)}
+      </span>
+    </div>
+  );
+};
+
 // Lazy-loading StreamCard component (memoized to prevent unnecessary re-renders)
 const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu, profileId, cacheMap, apiDebug, fetchMetadata, metadataCache, sectionType, onDownload, isFavorite, onToggleFavorite }) => {
   const [metadata, setMetadata] = useState(null);
@@ -49,7 +93,10 @@ const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu,
   const name = stream.name || stream.title;
   const plot = metadata?.plot || metadata?.description || '';
   const year = metadata?.releasedate?.split('-')[0] || metadata?.release_date?.split('-')[0] || '';
-  const rating = metadata?.rating || '';
+  const rating = parseFloat(metadata?.rating || 0);
+  const duration = metadata?.duration_secs ? `${Math.floor(metadata.duration_secs / 60)}m` : (metadata?.duration || '');
+  const cast = metadata?.cast || '';
+  const director = metadata?.director || '';
 
   return (
     <div
@@ -58,9 +105,9 @@ const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu,
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
       style={{
-        height: showPlot && (sectionType === 'vod' || sectionType === 'series') ? '450px' : undefined,
-        minHeight: showPlot && (sectionType === 'vod' || sectionType === 'series') ? '400px' : undefined,
-        maxHeight: showPlot && (sectionType === 'vod' || sectionType === 'series') ? '500px' : undefined
+        height: showPlot && (sectionType === 'vod' || sectionType === 'series') ? '480px' : undefined,
+        minHeight: showPlot && (sectionType === 'vod' || sectionType === 'series') ? '420px' : undefined,
+        maxHeight: showPlot && (sectionType === 'vod' || sectionType === 'series') ? '550px' : undefined
       }}
     >
       <CachedImage
@@ -71,7 +118,7 @@ const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu,
         cacheMap={cacheMap}
         apiDebug={apiDebug}
       />
-      <div className="stream-name">{name}</div>
+      <div className="stream-name" style={{ fontWeight: 'bold' }}>{name}</div>
       
       {/* Favorite Star */}
       {sectionType !== 'episode' && (
@@ -143,13 +190,22 @@ const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu,
       )}
       {showPlot && (sectionType === 'vod' || sectionType === 'series') && (
         <div className="stream-plot">
-          {(year || rating) && (
-            <div style={{ fontSize: '0.75rem', color: '#ffd43b', fontWeight: 'bold', marginBottom: '2px' }}>
-              {year && <span>{year}</span>}
-              {year && rating && <span> • </span>}
-              {rating && <span>⭐ {rating}</span>}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+            <StarRating rating={rating} />
+            {duration && <span style={{ fontSize: '0.7rem', color: '#888' }}>{duration}</span>}
+          </div>
+          
+          <div style={{ fontSize: '0.75rem', color: '#ffd43b', marginBottom: '4px' }}>
+            {year && <span>{year}</span>}
+            {director && <span style={{ marginLeft: '8px', color: '#aaa' }}>Dir: {director}</span>}
+          </div>
+
+          {cast && (
+            <div style={{ fontSize: '0.65rem', color: '#909296', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <strong>Cast:</strong> {cast}
             </div>
           )}
+
           {plot ? (
             <div style={{
               fontSize: '0.7rem',
@@ -220,6 +276,7 @@ function App() {
   const [downloads, setDownloads] = useState([]); // Active downloads list
   const [showDownloadManager, setShowDownloadManager] = useState(false); // Download manager visibility
   const [favorites, setFavorites] = useState([]); // List of favorite IDs for current profile
+  const [lastCategoryClick, setLastCategoryClick] = useState({ id: null, timestamp: 0 }); // Track for double-click refresh
 
   // Sync favorites when profile changes
   useEffect(() => {
@@ -314,7 +371,7 @@ function App() {
     }
   };
 
-  const fetchStreams = async (catId) => {
+  const fetchStreams = async (catId, bypassCache = false) => {
     if (!currentProfile || !selectedServer || !catId) return;
     setIsLoading(true);
     setStatus(`Loading streams...`);
@@ -339,7 +396,8 @@ function App() {
                 server: selectedServer,
                 username: currentProfile.username,
                 password: currentProfile.password,
-                action: actionMap[selectedSection]
+                action: actionMap[selectedSection],
+                bypassCache
             };
 
             const result = await window.api.xcApi(params);
@@ -352,7 +410,7 @@ function App() {
                     
                     setStreams(favStreams);
                     setDisplayCount(100);
-                    setStatus(`Loaded ${favStreams.length} favorites.`);
+                    setStatus(`Loaded ${favStreams.length} favorites. ${bypassCache ? '(FORCED REFRESH)' : ''}`);
                     return currentFavs;
                 });
             }
@@ -366,7 +424,7 @@ function App() {
 
     // Handle synthetic "|EN| All" category
     if (catId === 'synthetic_en_all' && selectedSection === 'vod') {
-        if (apiDebug) console.log(`[API DEBUG] Fetching aggregated |EN| streams...`);
+        if (apiDebug) console.log(`[API DEBUG] Fetching aggregated |EN| streams... ${bypassCache ? '(FORCED REFRESH)' : ''}`);
 
         try {
             const enCategories = allCategories.vod.filter(cat =>
@@ -383,7 +441,8 @@ function App() {
                     username: currentProfile.username,
                     password: currentProfile.password,
                     action: 'get_vod_streams',
-                    extraParams: { category_id: cat.category_id }
+                    extraParams: { category_id: cat.category_id },
+                    bypassCache
                 };
 
                 if (apiDebug) console.log(`[API DEBUG] Fetching streams from ${cat.category_name}...`);
@@ -446,7 +505,7 @@ function App() {
                     }
                 });
 
-                setStatus(`Loaded ${uniqueStreams.length} aggregated |EN| streams.`);
+                setStatus(`Loaded ${uniqueStreams.length} aggregated |EN| streams. ${bypassCache ? '(FORCED REFRESH)' : ''}`);
             }, 0);
 
             setIsLoading(false);
@@ -471,10 +530,11 @@ function App() {
         username: currentProfile.username,
         password: currentProfile.password,
         action: actionMap[selectedSection],
-        extraParams: { category_id: catId }
+        extraParams: { category_id: catId },
+        bypassCache
     };
 
-    if (apiDebug) console.log(`[API DEBUG] Calling ${actionMap[selectedSection]} for category ${catId}`, params);
+    if (apiDebug) console.log(`[API DEBUG] Calling ${actionMap[selectedSection]} for category ${catId} ${bypassCache ? '(Bypassing Cache)' : ''}`, params);
 
     try {
         const result = await window.api.xcApi(params);
@@ -528,7 +588,7 @@ function App() {
                     }
                 });
 
-                setStatus(`Loaded ${data.length || 0} streams.`);
+                setStatus(`Loaded ${data.length || 0} streams. ${bypassCache ? '(FORCED REFRESH)' : ''}`);
             }, 0);
         } else {
             if (apiDebug) console.error(`[API DEBUG] ${actionMap[selectedSection]} Error:`, result.error);
@@ -824,11 +884,6 @@ function App() {
     }
   }, [currentProfile?.id, selectedServer]);
 
-  useEffect(() => {
-    if (selectedCategory) fetchStreams(selectedCategory);
-    else setStreams([]);
-  }, [selectedCategory, selectedSection]);
-
   // Reset displayCount when filters or sort changes
   useEffect(() => {
     setDisplayCount(100);
@@ -891,6 +946,30 @@ function App() {
         window.api.castPlay(device, finalUrl);
     } else {
         window.api.launchVLC(finalUrl, null, stream.name || stream.title);
+    }
+  };
+
+  const handleCategoryClick = (catId) => {
+    const now = Date.now();
+    const isSameCategory = selectedCategory === catId;
+    const isWithinOneSecond = now - lastCategoryClick.timestamp < 1000;
+    
+    // Update click tracking
+    setLastCategoryClick({ id: catId, timestamp: now });
+
+    if (isSameCategory && isWithinOneSecond) {
+        if (apiDebug) console.log(`[REFRESH] Double-click detected for category ${catId}. Purging cache...`);
+        fetchStreams(catId, true);
+    } else if (!isSameCategory) {
+        setSelectedCategory(catId);
+        setViewMode('list');
+        setSeriesInfo(null);
+        fetchStreams(catId, false);
+    } else {
+        // Same category but > 1s, just re-fetch from cache (or do nothing if already loaded)
+        // Usually clicking the same category again should probably still trigger a fetch
+        // so the user sees it's working/updating.
+        fetchStreams(catId, false);
     }
   };
 
@@ -1089,7 +1168,13 @@ function App() {
                 <button 
                     key={s.id} 
                     className="btn section-btn" 
-                    onClick={() => { setSelectedSection(s.id); setSelectedCategory(null); setViewMode('list'); setSeriesInfo(null); }} 
+                    onClick={() => { 
+                        setSelectedSection(s.id); 
+                        setSelectedCategory(null); 
+                        setViewMode('list'); 
+                        setSeriesInfo(null);
+                        setLastCategoryClick({ id: null, timestamp: 0 });
+                    }} 
                     style={{ 
                         padding: '2px 12px', 
                         fontSize: '0.7rem', 
@@ -1240,7 +1325,7 @@ function App() {
                         {expandedGroups[prefix] ? <ChevronDown size={14} /> : <ChevronRight size={14} />} {prefix}
                     </div>
                     {expandedGroups[prefix] && cats.map(cat => (
-                        <div key={cat.category_id} className={`category-item ${selectedCategory === cat.category_id ? 'active' : ''}`} onClick={() => { setSelectedCategory(cat.category_id); setViewMode('list'); setSeriesInfo(null); }} style={{ paddingLeft: '32px' }}>
+                        <div key={cat.category_id} className={`category-item ${selectedCategory === cat.category_id ? 'active' : ''}`} onClick={() => handleCategoryClick(cat.category_id)} style={{ paddingLeft: '32px' }}>
                             {cat.category_name}
                         </div>
                     ))}
@@ -1380,12 +1465,36 @@ function App() {
                   {contextMenu.isLoading ? (
                       <div className="context-menu-info" style={{ textAlign: 'center', opacity: 0.6 }}>Loading metadata...</div>
                   ) : info ? (
-                      <div className="context-menu-metadata">
-                          {isEpisode && <div className="metadata-row" style={{ color: 'var(--section-accent)', fontWeight: 'bold', marginBottom: '8px' }}>{contextMenu.stream.title}</div>}
-                          {(info.plot || contextMenu.stream.plot) && <div className="metadata-row"><strong>Plot:</strong> <div className="metadata-text">{info.plot || contextMenu.stream.plot}</div></div>}
-                          <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-                            {info.director && <div className="metadata-row"><strong>Dir:</strong> {info.director}</div>}
-                            {(info.releasedate || info.release_date) && <div className="metadata-row"><strong>Year:</strong> {(info.releasedate || info.release_date).split('-')[0]}</div>}
+                      <div className="context-menu-metadata" style={{ minWidth: '300px' }}>
+                          <div className="metadata-row" style={{ color: 'var(--section-accent)', fontWeight: 'bold', marginBottom: '8px', fontSize: '1rem' }}>
+                            {contextMenu.stream.name || contextMenu.stream.title}
+                          </div>
+                          
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                            <StarRating rating={parseFloat(info.rating || 0)} />
+                            {info.duration && <span style={{ fontSize: '0.75rem', color: '#888' }}>{info.duration}</span>}
+                          </div>
+
+                          {(info.plot || contextMenu.stream.plot) && (
+                            <div className="metadata-row">
+                              <strong>Plot:</strong> 
+                              <div className="metadata-text" style={{ maxHeight: '100px', overflowY: 'auto' }}>{info.plot || contextMenu.stream.plot}</div>
+                            </div>
+                          )}
+
+                          <div style={{ marginTop: '8px' }}>
+                            {info.director && <div className="metadata-row" style={{ fontSize: '0.8rem' }}><strong>Director:</strong> {info.director}</div>}
+                            {(info.releasedate || info.release_date) && (
+                              <div className="metadata-row" style={{ fontSize: '0.8rem' }}>
+                                <strong>Released:</strong> {(info.releasedate || info.release_date)}
+                              </div>
+                            )}
+                            {info.cast && (
+                              <div className="metadata-row" style={{ fontSize: '0.8rem', marginTop: '4px' }}>
+                                <strong>Cast:</strong> 
+                                <div className="metadata-text" style={{ fontStyle: 'italic', opacity: 0.8 }}>{info.cast}</div>
+                              </div>
+                            )}
                           </div>
                           <div className="context-menu-separator" />
                       </div>
