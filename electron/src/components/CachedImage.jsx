@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
+import { useIntersectionObserver } from '../hooks/useIntersectionObserver';
 
 const CachedImage = ({ src, alt, className, style, profileId, cacheMap, apiDebug }) => {
   const [imageSrc, setImageSrc] = useState(null);
   const [error, setError] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
   const isMounted = useRef(true);
-  const observerRef = useRef(null);
   const containerRef = useRef(null);
   const loadStartTime = useRef(null);
+  const [isVisible, setIsVisible] = useIntersectionObserver(containerRef, { rootMargin: '400px' });
 
   // Reset load start time when src changes (new category/image)
   useEffect(() => {
@@ -16,7 +16,7 @@ const CachedImage = ({ src, alt, className, style, profileId, cacheMap, apiDebug
     setImageSrc(null);
     setError(false);
     setIsVisible(false);
-  }, [src]);
+  }, [src, setIsVisible]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -28,29 +28,12 @@ const CachedImage = ({ src, alt, className, style, profileId, cacheMap, apiDebug
       if (apiDebug) console.log(`[IMG OBSERVER] Image already cached, setting immediately (${(t0-loadStartTime.current).toFixed(1)}ms since load start)`);
       setImageSrc(cachedSrc);
       setIsVisible(true);
-      return; // Skip IntersectionObserver for cached images
-    }
-
-    if (apiDebug) console.log(`[IMG OBSERVER] Setting up IntersectionObserver for uncached image (${(t0-loadStartTime.current).toFixed(1)}ms since load start)`);
-
-    observerRef.current = new IntersectionObserver((entries) => {
-        if (entries[0].isIntersecting) {
-            const t1 = performance.now();
-            if (apiDebug) console.log(`[IMG OBSERVER] IntersectionObserver fired (${(t1-loadStartTime.current).toFixed(1)}ms since load start)`);
-            setIsVisible(true);
-            if (observerRef.current) observerRef.current.disconnect();
-        }
-    }, { rootMargin: '400px' });
-
-    if (containerRef.current) {
-        observerRef.current.observe(containerRef.current);
     }
 
     return () => {
       isMounted.current = false;
-      if (observerRef.current) observerRef.current.disconnect();
     };
-  }, [src, cacheMap, apiDebug, profileId]);
+  }, [src, cacheMap, apiDebug, profileId, setIsVisible]);
 
   useEffect(() => {
     // Skip if already set by first useEffect

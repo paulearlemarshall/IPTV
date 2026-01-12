@@ -6,14 +6,16 @@ import ProfileManager from './components/ProfileManager';
 import FlipBookView from './components/FlipBookView';
 import StarRating from './components/StarRating';
 import { useXCApi } from './hooks/useXCApi';
+import { useIntersectionObserver } from './hooks/useIntersectionObserver';
 import { getXcUrl, getXcLogoUrl } from './utils/xc';
 
 const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu, profileId, cacheMap, apiDebug, fetchMetadata, metadataCache, sectionType, onDownload, isFavorite, onToggleFavorite }) => {
   const [metadata, setMetadata] = useState(null);
   const cardRef = useRef(null);
+  const [isVisible] = useIntersectionObserver(cardRef, { rootMargin: '200px' });
 
   useEffect(() => {
-    if (showPlot && !metadata && (sectionType === 'vod' || sectionType === 'series')) {
+    if (showPlot && isVisible && !metadata && (sectionType === 'vod' || sectionType === 'series')) {
       const id = stream.stream_id || stream.series_id;
       const cacheKey = `${sectionType}_${id}`;
 
@@ -25,7 +27,7 @@ const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu,
         });
       }
     }
-  }, [showPlot, stream, fetchMetadata, metadata, metadataCache, sectionType]);
+  }, [showPlot, isVisible, stream, fetchMetadata, metadata, metadataCache, sectionType]);
 
   const logo = stream.stream_icon || stream.cover;
   const name = stream.name || stream.title;
