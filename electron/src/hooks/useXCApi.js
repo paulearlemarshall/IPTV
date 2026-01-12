@@ -376,7 +376,7 @@ export function useXCApi({ apiDebug = false } = {}) {
     }
   }, [apiDebug]);
 
-  const fetchStreamMetadata = useCallback(async ({ stream, section, server, profile }) => {
+  const fetchStreamMetadata = useCallback(async ({ stream, section, server, profile, setImageCacheMap }) => {
     const id = stream.stream_id || stream.series_id;
     const cacheKey = `${section}_${id}`;
 
@@ -405,6 +405,19 @@ export function useXCApi({ apiDebug = false } = {}) {
       if (result.success) {
         if (apiDebug) console.log(`[METADATA] ${action} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'} for ID ${id} (${(t1 - t0).toFixed(1)}ms)`);
         const metadata = result.data.info || result.data;
+        
+        // Background cache check for images in metadata (backdrops, etc)
+        const backdropUrl = Array.isArray(metadata.backdrop_path) ? metadata.backdrop_path[0] : metadata.backdrop_path;
+        const imageUrls = [backdropUrl, metadata.cover, metadata.movie_image].filter(u => !!u);
+        
+        if (imageUrls.length > 0 && setImageCacheMap) {
+            window.api.checkImageCacheBatch({ urls: imageUrls, profileId: profile.id }).then(cacheResults => {
+                if (Object.keys(cacheResults).length > 0) {
+                    setImageCacheMap(prev => ({ ...prev, ...cacheResults }));
+                }
+            }).catch(() => {});
+        }
+
         setMetadataCache(prev => ({ ...prev, [cacheKey]: metadata }));
         return metadata;
       } else {

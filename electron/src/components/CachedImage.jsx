@@ -53,29 +53,40 @@ const CachedImage = ({ src, alt, className, style, profileId, cacheMap, apiDebug
       if (cacheMap && cacheMap[src]) {
           if (isMounted.current) {
               const t1 = performance.now();
-              if (apiDebug) console.log(`[IMG CACHE] ✓ HIT: ${src.substring(src.lastIndexOf('/')+1, src.lastIndexOf('/')+20)}... (${(t1-t0).toFixed(1)}ms, ${timeSinceStart}ms since load start)`);
+              if (apiDebug) console.log(`[IMG CACHE] ✓ HIT (Map): ${src.substring(src.lastIndexOf('/')+1, src.lastIndexOf('/')+20)}... (${(t1-t0).toFixed(1)}ms)`);
               setImageSrc(cacheMap[src]);
               return;
           }
       }
 
-      // 2. If not in the pre-warmed map, we treat it as potentially missing
-      // But we set the remote URL so the user sees something immediately
+      // 2. Check disk cache via IPC (Asynchronous lookup)
+      // This catches images that are on disk but not in the pre-warmed React state
+      if (window.api && window.api.checkImageCache) {
+          try {
+              const diskPath = await window.api.checkImageCache({ url: src, profileId });
+              if (diskPath && isMounted.current) {
+                  const t1 = performance.now();
+                  if (apiDebug) console.log(`[IMG CACHE] ✓ HIT (Disk): ${src.substring(src.lastIndexOf('/')+1, src.lastIndexOf('/')+20)}... (${(t1-t0).toFixed(1)}ms)`);
+                  setImageSrc(diskPath);
+                  return;
+              }
+          } catch (e) {
+              console.error("Disk cache check failed", e);
+          }
+      }
+
+      // 3. Fallback to remote URL if not in map or on disk
       const t2 = performance.now();
-      if (apiDebug) console.log(`[IMG CACHE] ✗ MISS: ${src.substring(src.lastIndexOf('/')+1, src.lastIndexOf('/')+20)}... Using remote URL (${(t2-t0).toFixed(1)}ms, ${timeSinceStart}ms since load start)`);
+      if (apiDebug) console.log(`[IMG CACHE] ✗ MISS: ${src.substring(src.lastIndexOf('/')+1, src.lastIndexOf('/')+20)}... Using remote URL (${(t2-t0).toFixed(1)}ms)`);
 
       if (isMounted.current) {
           setImageSrc(src);
       }
 
       try {
-        // 3. Trigger background cache for next time
+        // 4. Trigger background cache for next time
         if (window.api && window.api.cacheImage) {
-            const t3 = performance.now();
-            if (apiDebug) console.log(`[IMG CACHE] → Queueing background download for: ${src.substring(src.lastIndexOf('/')+1, src.lastIndexOf('/')+20)}...`);
             window.api.cacheImage({ url: src, profileId }).catch(e => {});
-            const t4 = performance.now();
-            if (apiDebug) console.log(`[IMG CACHE] ✓ Queued (${(t4-t3).toFixed(1)}ms, ${(t4-loadStartTime.current).toFixed(1)}ms total)`);
         }
       } catch (e) {}
     };

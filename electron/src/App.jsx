@@ -274,9 +274,10 @@ function App() {
       stream,
       section: selectedSection,
       server: selectedServer,
-      profile: currentProfile
+      profile: currentProfile,
+      setImageCacheMap
     });
-  }, [fetchStreamMetadataFromHook, selectedSection, selectedServer, currentProfile]);
+  }, [fetchStreamMetadataFromHook, selectedSection, selectedServer, currentProfile, setImageCacheMap]);
 
   const playStream = useCallback(async (stream, type = selectedSection) => {
     if (type === 'series') {
