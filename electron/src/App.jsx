@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Settings, RefreshCw, Play, Search, Copy, Download, Cast, ChevronRight, ChevronDown, X, User, Bug, Calendar, ArrowDown, ArrowUp, Star } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Settings, RefreshCw, Play, Search, Copy, Download, Cast, ChevronRight, ChevronDown, X, User, Bug, Calendar, ArrowDown, ArrowUp, Star, BookOpen } from 'lucide-react';
 import VideoPlayer from './components/VideoPlayer';
 import CachedImage from './components/CachedImage';
 import ProfileManager from './components/ProfileManager';
+import FlipBookView from './components/FlipBookView';
+import { useXCApi } from './hooks/useXCApi';
 
 const StarRating = ({ rating, max = 10 }) => {
   const stars = [];
@@ -11,10 +13,8 @@ const StarRating = ({ rating, max = 10 }) => {
 
   for (let i = 0; i < max; i++) {
     if (i < fullStars) {
-      // Full Star
       stars.push(<Star key={i} size={10} fill="#ffd43b" color="#ffd43b" />);
     } else if (i === fullStars && fractionalPart > 0) {
-      // Partial Star with precise clipping
       stars.push(
         <div key={i} style={{ position: 'relative', display: 'inline-block', lineHeight: 0 }}>
           <Star size={10} color="#333" />
@@ -31,7 +31,6 @@ const StarRating = ({ rating, max = 10 }) => {
         </div>
       );
     } else {
-      // Empty Star
       stars.push(<Star key={i} size={10} color="#333" />);
     }
   }
@@ -48,7 +47,6 @@ const StarRating = ({ rating, max = 10 }) => {
   );
 };
 
-// Lazy-loading StreamCard component (memoized to prevent unnecessary re-renders)
 const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu, profileId, cacheMap, apiDebug, fetchMetadata, metadataCache, sectionType, onDownload, isFavorite, onToggleFavorite }) => {
   const [metadata, setMetadata] = useState(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -77,11 +75,9 @@ const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu,
       const id = stream.stream_id || stream.series_id;
       const cacheKey = `${sectionType}_${id}`;
 
-      // Check cache first
       if (metadataCache[cacheKey]) {
         setMetadata(metadataCache[cacheKey]);
       } else {
-        // Fetch metadata
         fetchMetadata(stream).then(data => {
           if (data) setMetadata(data);
         });
@@ -120,7 +116,6 @@ const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu,
       />
       <div className="stream-name" style={{ fontWeight: 'bold' }}>{name}</div>
       
-      {/* Favorite Star */}
       {sectionType !== 'episode' && (
         <button
           className="favorite-btn"
@@ -227,7 +222,6 @@ const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu,
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Only re-render if these specific props change
   return (
     prevProps.stream.stream_id === nextProps.stream.stream_id &&
     prevProps.stream.series_id === nextProps.stream.series_id &&
@@ -242,17 +236,12 @@ function App() {
   const [currentProfile, setCurrentProfile] = useState(null);
   const [selectedServer, setSelectedServer] = useState('');
   const [showProfiles, setShowProfiles] = useState(false);
-  const [status, setStatus] = useState('Ready');
   const [apiDebug, setApiDebug] = useState(true);
 
-  // Section & Category State
-  const [selectedSection, setSelectedSection] = useState('live'); // 'live', 'vod', 'series'
-  const [allCategories, setAllCategories] = useState({ live: [], vod: [], series: [] });
-  const [streams, setStreams] = useState([]); // CURRENT category streams
+  const [selectedSection, setSelectedSection] = useState('live');
   const [selectedCategory, setSelectedCategory] = useState(null);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [englishOnly, setEnglishOnly] = useState(false);
   const [playerMode, setPlayerMode] = useState('vlc');
   const [currentStream, setCurrentStream] = useState(null);
@@ -262,21 +251,42 @@ function App() {
   const [expandedGroups, setExpandedGroups] = useState({});
   const [tileSize, setTileSize] = useState(200);
   const [contextMenu, setContextMenu] = useState(null);
-  const [seriesInfo, setSeriesInfo] = useState(null);
-  const [activeSeason, setActiveSeason] = useState(null);
-  const [viewMode, setViewMode] = useState('list'); // 'list' or 'details'
-  const [accountInfo, setAccountInfo] = useState(null);
   const [imageCacheMap, setImageCacheMap] = useState({});
   const [showPlot, setShowPlot] = useState(false);
-  const [metadataCache, setMetadataCache] = useState({}); // Cache for plot/metadata
-  const [isRendering, setIsRendering] = useState(false); // Track if React is rendering
-  const [displayCount, setDisplayCount] = useState(100); // Progressive rendering: start with 100 tiles
-  const [yearFilter, setYearFilter] = useState('none'); // Year filter for streams
-  const [sortByYear, setSortByYear] = useState(false); // Sort by year toggle
-  const [downloads, setDownloads] = useState([]); // Active downloads list
-  const [showDownloadManager, setShowDownloadManager] = useState(false); // Download manager visibility
-  const [favorites, setFavorites] = useState([]); // List of favorite IDs for current profile
-  const [lastCategoryClick, setLastCategoryClick] = useState({ id: null, timestamp: 0 }); // Track for double-click refresh
+  const [yearFilter, setYearFilter] = useState('none');
+  const [sortByYear, setSortByYear] = useState(false);
+  const [downloads, setDownloads] = useState([]);
+  const [showDownloadManager, setShowDownloadManager] = useState(false);
+  const [favorites, setFavorites] = useState([]);
+  const [lastCategoryClick, setLastCategoryClick] = useState({ id: null, timestamp: 0 });
+  const [flipBookMode, setFlipBookMode] = useState(false);
+  const [flipBookIndex, setFlipBookIndex] = useState(0);
+
+  // Use the XC API hook
+  const xcApi = useXCApi({ apiDebug });
+
+  const {
+    allCategories,
+    streams,
+    seriesInfo,
+    accountInfo,
+    metadataCache,
+    isLoading,
+    status,
+    isRendering,
+    displayCount,
+    viewMode,
+    activeSeason,
+    setDisplayCount,
+    setStatus,
+    fetchCategories: fetchCategoriesFromHook,
+    fetchStreams: fetchStreamsFromHook,
+    fetchSeriesInfo: fetchSeriesInfoFromHook,
+    fetchAccountInfo: fetchAccountInfoFromHook,
+    fetchStreamMetadata: fetchStreamMetadataFromHook,
+    backToList,
+    clearAccountInfo
+  } = xcApi;
 
   // Sync favorites when profile changes
   useEffect(() => {
@@ -285,9 +295,55 @@ function App() {
     }
   }, [currentProfile?.id]);
 
-  // --- API Actions ---
+  // Wrapper functions that pass current context
+  const fetchCategories = useCallback((section = selectedSection, bypassCache = false) => {
+    fetchCategoriesFromHook({
+      section,
+      server: selectedServer,
+      profile: currentProfile,
+      bypassCache,
+      setImageCacheMap
+    });
+  }, [fetchCategoriesFromHook, selectedServer, currentProfile, selectedSection]);
 
-  const toggleFavorite = React.useCallback(async (stream) => {
+  const fetchStreams = useCallback((catId, bypassCache = false) => {
+    fetchStreamsFromHook({
+      catId,
+      section: selectedSection,
+      server: selectedServer,
+      profile: currentProfile,
+      bypassCache,
+      favorites,
+      setImageCacheMap
+    });
+  }, [fetchStreamsFromHook, selectedSection, selectedServer, currentProfile, favorites]);
+
+  const fetchSeriesInfo = useCallback((seriesId) => {
+    fetchSeriesInfoFromHook({
+      seriesId,
+      server: selectedServer,
+      profile: currentProfile,
+      setImageCacheMap
+    });
+  }, [fetchSeriesInfoFromHook, selectedServer, currentProfile]);
+
+  const fetchAccountInfo = useCallback(() => {
+    fetchAccountInfoFromHook({
+      server: selectedServer,
+      profile: currentProfile
+    });
+  }, [fetchAccountInfoFromHook, selectedServer, currentProfile]);
+
+  const fetchStreamMetadata = useCallback((stream) => {
+    return fetchStreamMetadataFromHook({
+      stream,
+      section: selectedSection,
+      server: selectedServer,
+      profile: currentProfile
+    });
+  }, [fetchStreamMetadataFromHook, selectedSection, selectedServer, currentProfile]);
+
+  const toggleFavorite = useCallback(async (stream) => {
     const id = (stream.stream_id || stream.series_id || stream.id || "").toString();
     if (!id) return;
 
@@ -295,7 +351,6 @@ function App() {
       const isFav = prev.includes(id);
       const next = isFav ? prev.filter(favId => favId !== id) : [...prev, id];
       
-      // Persist to config in background
       (async () => {
         if (currentProfile) {
           try {
@@ -315,388 +370,6 @@ function App() {
     });
   }, [currentProfile?.id]);
 
-  const fetchCategories = async (section = selectedSection, bypassCache = false) => {
-    if (!currentProfile || !selectedServer) return;
-    setIsLoading(true);
-    setStatus(`Loading ${section} categories...`);
-    
-    const actionMap = {
-        live: 'get_live_categories',
-        vod: 'get_vod_categories',
-        series: 'get_series_categories'
-    };
-
-    const params = {
-        server: selectedServer,
-        username: currentProfile.username,
-        password: currentProfile.password,
-        action: actionMap[section],
-        bypassCache
-    };
-
-    if (apiDebug) console.log(`[API DEBUG] Calling ${actionMap[section]} ${bypassCache ? '(Bypassing Cache)' : ''}`, params);
-
-    try {
-        const result = await window.api.xcApi(params);
-
-        if (result.success) {
-            if (apiDebug) console.log(`[API DEBUG] ${actionMap[section]} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}:`, result.data);
-            let cats = Array.isArray(result.data) ? result.data : [];
-
-            // Add synthetic "|EN| All" category for VOD
-            if (section === 'vod') {
-                const enCategories = cats.filter(cat => cat.category_name?.startsWith('|EN|'));
-                if (enCategories.length > 0) {
-                    const syntheticCategory = {
-                        category_id: 'synthetic_en_all',
-                        category_name: '|EN| All',
-                        parent_id: 0
-                    };
-                    // Insert at the beginning
-                    cats = [syntheticCategory, ...cats];
-                }
-            }
-
-            setAllCategories(prev => ({ ...prev, [section]: cats }));
-            setStatus(`Loaded ${cats.length || 0} ${section} categories.`);
-        } else {
-            if (apiDebug) console.error(`[API DEBUG] ${actionMap[section]} Error:`, result.error);
-            setStatus(`Error: ${result.error}`);
-        }
-    } catch (e) {
-        if (apiDebug) console.error(`[API DEBUG] ${actionMap[section]} Exception:`, e);
-        setStatus(`Exception: ${e.message}`);
-    } finally {
-        setIsLoading(false);
-    }
-  };
-
-  const fetchStreams = async (catId, bypassCache = false) => {
-    if (!currentProfile || !selectedServer || !catId) return;
-    setIsLoading(true);
-    setStatus(`Loading streams...`);
-
-    const t0 = performance.now();
-
-    // Handle Favorites category
-    if (catId === 'favorites') {
-        const actionMap = {
-            live: 'get_live_streams',
-            vod: 'get_vod_streams',
-            series: 'get_series'
-        };
-
-        try {
-            // To show favorites, we ideally need all streams from all categories
-            // which might be slow. A better way for XC API is often to fetch all,
-            // but for now we'll fetch them from the current section's "all" if possible, 
-            // or just rely on what's already loaded if the user has favorites.
-            // Actually, the most reliable way is to fetch the full list for the section.
-            const params = {
-                server: selectedServer,
-                username: currentProfile.username,
-                password: currentProfile.password,
-                action: actionMap[selectedSection],
-                bypassCache
-            };
-
-            const result = await window.api.xcApi(params);
-            if (result.success) {
-                const data = Array.isArray(result.data) ? result.data : [];
-                // Use functional update or ensure we have latest favorites
-                setFavorites(currentFavs => {
-                    const favIdsSet = new Set(currentFavs);
-                    const favStreams = data.filter(s => favIdsSet.has((s.stream_id || s.series_id || s.id)?.toString()));
-                    
-                    setStreams(favStreams);
-                    setDisplayCount(100);
-                    setStatus(`Loaded ${favStreams.length} favorites. ${bypassCache ? '(FORCED REFRESH)' : ''}`);
-                    return currentFavs;
-                });
-            }
-        } catch (e) {
-            console.error("Failed to fetch favorites", e);
-        } finally {
-            setIsLoading(false);
-            return;
-        }
-    }
-
-    // Handle synthetic "|EN| All" category
-    if (catId === 'synthetic_en_all' && selectedSection === 'vod') {
-        if (apiDebug) console.log(`[API DEBUG] Fetching aggregated |EN| streams... ${bypassCache ? '(FORCED REFRESH)' : ''}`);
-
-        try {
-            const enCategories = allCategories.vod.filter(cat =>
-                cat.category_name?.startsWith('|EN|') &&
-                cat.category_id !== 'synthetic_en_all'
-            );
-
-            if (apiDebug) console.log(`[API DEBUG] Found ${enCategories.length} |EN| categories to aggregate`);
-
-            let allStreams = [];
-            for (const cat of enCategories) {
-                const params = {
-                    server: selectedServer,
-                    username: currentProfile.username,
-                    password: currentProfile.password,
-                    action: 'get_vod_streams',
-                    extraParams: { category_id: cat.category_id },
-                    bypassCache
-                };
-
-                if (apiDebug) console.log(`[API DEBUG] Fetching streams from ${cat.category_name}...`);
-
-                const result = await window.api.xcApi(params);
-                if (result.success) {
-                    const streams = Array.isArray(result.data) ? result.data : [];
-                    if (apiDebug) console.log(`[API DEBUG] Got ${streams.length} streams from ${cat.category_name}`);
-                    allStreams = [...allStreams, ...streams];
-                }
-            }
-
-            const t1 = performance.now();
-            if (apiDebug) console.log(`[API DEBUG] Aggregated ${allStreams.length} total streams from ${enCategories.length} categories (${(t1-t0).toFixed(1)}ms)`);
-
-            // Remove duplicates by stream_id
-            const uniqueStreams = Array.from(
-                new Map(allStreams.map(s => [s.stream_id, s])).values()
-            );
-
-            if (apiDebug) console.log(`[API DEBUG] After deduplication: ${uniqueStreams.length} unique streams`);
-
-            // Pre-check cache BEFORE setting streams
-            const urls = uniqueStreams.map(s => s.stream_icon || s.cover || s.info?.movie_image).filter(u => !!u);
-            let cacheResults = {};
-            if (urls.length > 0) {
-                const t2 = performance.now();
-                if (apiDebug) console.log(`[IMG CACHE] Batch checking ${urls.length} images...`);
-                try {
-                    cacheResults = await window.api.checkImageCacheBatch({ urls, profileId: currentProfile.id });
-                    const t3 = performance.now();
-                    const hitCount = Object.keys(cacheResults).length;
-                    if (apiDebug) console.log(`[IMG CACHE] Batch check complete: ${hitCount}/${urls.length} cached (${(t3-t2).toFixed(1)}ms)`);
-                } catch (e) {
-                    console.error("Batch cache check failed", e);
-                }
-            }
-
-            const t4 = performance.now();
-            if (apiDebug) console.log(`[RENDER] Setting state... (${(t4-t0).toFixed(1)}ms)`);
-
-            setIsRendering(true);
-
-            setTimeout(() => {
-                const t5 = performance.now();
-                if (apiDebug) console.log(`[RENDER] Applying state update (${(t5-t0).toFixed(1)}ms)`);
-
-                setImageCacheMap(prev => ({ ...prev, ...cacheResults }));
-                setStreams(uniqueStreams);
-                setDisplayCount(100);
-
-                requestAnimationFrame(() => {
-                    const t6 = performance.now();
-                    if (apiDebug) console.log(`[RENDER] Initial 100 tiles rendered (${(t6-t0).toFixed(1)}ms)`);
-                    setIsRendering(false);
-
-                    if (uniqueStreams.length > 100) {
-                        const remaining = uniqueStreams.length - 100;
-                        if (apiDebug) console.log(`[RENDER] Scheduling ${remaining} more tiles to load progressively...`);
-                    }
-                });
-
-                setStatus(`Loaded ${uniqueStreams.length} aggregated |EN| streams. ${bypassCache ? '(FORCED REFRESH)' : ''}`);
-            }, 0);
-
-            setIsLoading(false);
-            return;
-        } catch (e) {
-            if (apiDebug) console.error(`[API DEBUG] Aggregated fetch Exception:`, e);
-            setStatus(`Exception: ${e.message}`);
-            setIsLoading(false);
-            return;
-        }
-    }
-
-    // Normal category fetch
-    const actionMap = {
-        live: 'get_live_streams',
-        vod: 'get_vod_streams',
-        series: 'get_series'
-    };
-
-    const params = {
-        server: selectedServer,
-        username: currentProfile.username,
-        password: currentProfile.password,
-        action: actionMap[selectedSection],
-        extraParams: { category_id: catId },
-        bypassCache
-    };
-
-    if (apiDebug) console.log(`[API DEBUG] Calling ${actionMap[selectedSection]} for category ${catId} ${bypassCache ? '(Bypassing Cache)' : ''}`, params);
-
-    try {
-        const result = await window.api.xcApi(params);
-        const t1 = performance.now();
-
-        if (result.success) {
-            if (apiDebug) console.log(`[API DEBUG] ${actionMap[selectedSection]} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}: ${result.data?.length || 0} items (${(t1-t0).toFixed(1)}ms)`, result.data);
-            const data = Array.isArray(result.data) ? result.data : [];
-
-            // Pre-check cache BEFORE setting streams to avoid double-render
-            const urls = data.map(s => s.stream_icon || s.cover || s.info?.movie_image).filter(u => !!u);
-            let cacheResults = {};
-            if (urls.length > 0) {
-                const t2 = performance.now();
-                if (apiDebug) console.log(`[IMG CACHE] Batch checking ${urls.length} images...`);
-                try {
-                    cacheResults = await window.api.checkImageCacheBatch({ urls, profileId: currentProfile.id });
-                    const t3 = performance.now();
-                    const hitCount = Object.keys(cacheResults).length;
-                    if (apiDebug) console.log(`[IMG CACHE] Batch check complete: ${hitCount}/${urls.length} cached (${(t3-t2).toFixed(1)}ms)`);
-                } catch (e) {
-                    console.error("Batch cache check failed", e);
-                }
-            }
-
-            const t4 = performance.now();
-            if (apiDebug) console.log(`[RENDER] Setting state... (${(t4-t0).toFixed(1)}ms)`);
-
-            // Show rendering indicator
-            setIsRendering(true);
-
-            // Use setTimeout to allow UI to breathe before heavy render
-            setTimeout(() => {
-                const t5 = performance.now();
-                if (apiDebug) console.log(`[RENDER] Applying state update (${(t5-t0).toFixed(1)}ms)`);
-
-                setImageCacheMap(prev => ({ ...prev, ...cacheResults }));
-                setStreams(data);
-                setDisplayCount(100); // Reset to first 100 items
-
-                // Schedule after-render check
-                requestAnimationFrame(() => {
-                    const t6 = performance.now();
-                    if (apiDebug) console.log(`[RENDER] Initial 100 tiles rendered (${(t6-t0).toFixed(1)}ms)`);
-                    setIsRendering(false); // Hide rendering indicator
-
-                    // Auto-load remaining tiles progressively
-                    if (data.length > 100) {
-                        const remaining = data.length - 100;
-                        if (apiDebug) console.log(`[RENDER] Scheduling ${remaining} more tiles to load progressively...`);
-                    }
-                });
-
-                setStatus(`Loaded ${data.length || 0} streams. ${bypassCache ? '(FORCED REFRESH)' : ''}`);
-            }, 0);
-        } else {
-            if (apiDebug) console.error(`[API DEBUG] ${actionMap[selectedSection]} Error:`, result.error);
-            setStatus(`Error: ${result.error}`);
-        }
-    } catch (e) {
-        if (apiDebug) console.error(`[API DEBUG] ${actionMap[selectedSection]} Exception:`, e);
-        setStatus(`Exception: ${e.message}`);
-    } finally {
-        setIsLoading(false);
-    }
-  };
-
-  const fetchSeriesInfo = async (seriesId) => {
-    if (!currentProfile || !selectedServer || !seriesId) return;
-    setIsLoading(true);
-    setStatus(`Fetching episodes...`);
-
-    const params = {
-        server: selectedServer,
-        username: currentProfile.username,
-        password: currentProfile.password,
-        action: 'get_series_info',
-        extraParams: { series_id: seriesId }
-    };
-
-    if (apiDebug) console.log(`[API DEBUG] Calling get_series_info for ID ${seriesId}`, params);
-
-    try {
-        const result = await window.api.xcApi(params);
-
-        if (result.success) {
-            if (apiDebug) console.log(`[API DEBUG] get_series_info Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}:`, result.data);
-
-            // Flatten all episodes to get their URLs for batch cache check
-            const allEpisodes = [];
-            Object.values(result.data.episodes || {}).forEach(season => {
-                allEpisodes.push(...season);
-            });
-
-            // Pre-check cache BEFORE setting series info
-            const urls = allEpisodes.map(ep => ep.info?.movie_image).filter(u => !!u);
-            if (result.data.info?.cover) urls.push(result.data.info.cover);
-
-            let cacheResults = {};
-            if (urls.length > 0) {
-                try {
-                    cacheResults = await window.api.checkImageCacheBatch({ urls, profileId: currentProfile.id });
-                } catch (e) {
-                    console.error("Batch cache check failed", e);
-                }
-            }
-
-            // Single state update with series info and cache map
-            setImageCacheMap(prev => ({ ...prev, ...cacheResults }));
-            setSeriesInfo(result.data);
-            setViewMode('details');
-
-            const seasonKeys = Object.keys(result.data.episodes || {}).sort((a,b) => parseInt(a)-parseInt(b));
-            if (seasonKeys.length > 0) setActiveSeason(seasonKeys[0]);
-            setStatus(`Loaded series: ${result.data.info?.name}`);
-        } else {
-            if (apiDebug) console.error(`[API DEBUG] get_series_info Error:`, result.error);
-            setStatus(`Error: ${result.error}`);
-        }
-    } catch (e) {
-        if (apiDebug) console.error(`[API DEBUG] get_series_info Exception:`, e);
-        setStatus(`Exception: ${e.message}`);
-    } finally {
-        setIsLoading(false);
-    }
-  };
-
-  const fetchAccountInfo = async () => {
-    if (!currentProfile || !selectedServer) return;
-    setStatus('Fetching account info...');
-    
-    const params = {
-        server: selectedServer,
-        username: currentProfile.username,
-        password: currentProfile.password,
-        action: '' 
-    };
-
-    if (apiDebug) console.log(`[API DEBUG] Calling Account Info (action: '')`, params);
-
-    try {
-        const result = await window.api.xcApi(params);
-        if (result.success) {
-            if (apiDebug) console.log(`[API DEBUG] Account Info Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}:`, result.data);
-            setAccountInfo(result.data);
-            setStatus('Account info loaded.');
-        } else {
-            if (apiDebug) console.error(`[API DEBUG] Account Info Error:`, result.error);
-            setStatus(`Error: ${result.error}`);
-        }
-    } catch (e) {
-        if (apiDebug) console.error(`[API DEBUG] Account Info Exception:`, e);
-        setStatus(`Exception: ${e.message}`);
-    }
-  };
-
-  const backToList = () => {
-    setSeriesInfo(null);
-    setViewMode('list');
-    setStatus('Ready');
-  };
-
   // Download handler
   const handleDownload = async (stream) => {
     const streamUrl = getXcUrl(stream);
@@ -710,14 +383,13 @@ function App() {
       url: streamUrl,
       progress: 0,
       speed: '0 KB/s',
-      status: 'queued', // queued, downloading, completed, error, cancelled
+      status: 'queued',
       error: null
     };
 
     setDownloads(prev => [...prev, newDownload]);
     setShowDownloadManager(true);
 
-    // Start download
     if (window.api && window.api.startDownload) {
       try {
         await window.api.startDownload({
@@ -747,10 +419,8 @@ function App() {
   };
 
   const removeDownload = async (downloadId) => {
-    // Find the download to check its status
     const dl = downloads.find(d => d.id === downloadId);
     
-    // If it's not finished, tell backend to cancel/remove it from queue
     if (dl && dl.status !== 'completed' && dl.status !== 'cancelled') {
       if (window.api && window.api.cancelDownload) {
         await window.api.cancelDownload({ id: downloadId });
@@ -785,7 +455,6 @@ function App() {
           : d
       ));
 
-      // Auto-remove cancelled downloads after 2 seconds
       if (data.status === 'cancelled') {
         setTimeout(() => {
           setDownloads(prev => prev.filter(d => d.id !== data.id));
@@ -801,48 +470,6 @@ function App() {
       }
     };
   }, []);
-
-  // Lazy load metadata for a single stream (VOD or Series)
-  const fetchStreamMetadata = async (stream) => {
-    const id = stream.stream_id || stream.series_id;
-    const cacheKey = `${selectedSection}_${id}`;
-
-    // Already cached?
-    if (metadataCache[cacheKey]) {
-      return metadataCache[cacheKey];
-    }
-
-    const action = selectedSection === 'vod' ? 'get_vod_info' : 'get_series_info';
-    const paramKey = selectedSection === 'vod' ? 'vod_id' : 'series_id';
-
-    const params = {
-        server: selectedServer,
-        username: currentProfile.username,
-        password: currentProfile.password,
-        action,
-        extraParams: { [paramKey]: id }
-    };
-
-    if (apiDebug) console.log(`[METADATA] Lazy loading ${action} for ID ${id}`, params);
-
-    try {
-        const t0 = performance.now();
-        const result = await window.api.xcApi(params);
-        const t1 = performance.now();
-
-        if (result.success) {
-            if (apiDebug) console.log(`[METADATA] ${action} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'} for ID ${id} (${(t1-t0).toFixed(1)}ms)`);
-            const metadata = result.data.info || result.data;
-            setMetadataCache(prev => ({ ...prev, [cacheKey]: metadata }));
-            return metadata;
-        } else {
-            if (apiDebug) console.error(`[METADATA] ${action} Error for ID ${id}:`, result.error);
-        }
-    } catch (err) {
-        if (apiDebug) console.error(`[METADATA] ${action} Exception for ID ${id}:`, err);
-    }
-    return null;
-  };
 
   // --- Effects ---
 
@@ -884,22 +511,28 @@ function App() {
     }
   }, [currentProfile?.id, selectedServer]);
 
-  // Reset displayCount when filters or sort changes
+  // Reset displayCount and flipBookIndex when filters or sort changes
   useEffect(() => {
     setDisplayCount(100);
-  }, [searchQuery, yearFilter, englishOnly, sortByYear]);
+    setFlipBookIndex(0);
+  }, [searchQuery, yearFilter, englishOnly, sortByYear, setDisplayCount]);
 
-  // Progressive loading: gradually increase displayCount after initial render
+  // Reset flipBookIndex when streams change (new category selected)
+  useEffect(() => {
+    setFlipBookIndex(0);
+  }, [streams]);
+
+  // Progressive loading
   useEffect(() => {
     if (streams.length > displayCount && !isRendering) {
       const timer = setTimeout(() => {
         const newCount = Math.min(displayCount + 100, streams.length);
         if (apiDebug) console.log(`[RENDER] Loading ${newCount - displayCount} more tiles (${displayCount} -> ${newCount})`);
         setDisplayCount(newCount);
-      }, 50); // Small delay between batches
+      }, 50);
       return () => clearTimeout(timer);
     }
-  }, [streams.length, displayCount, isRendering, apiDebug]);
+  }, [streams.length, displayCount, isRendering, apiDebug, setDisplayCount]);
 
   // --- Helpers ---
 
@@ -954,7 +587,6 @@ function App() {
     const isSameCategory = selectedCategory === catId;
     const isWithinOneSecond = now - lastCategoryClick.timestamp < 1000;
     
-    // Update click tracking
     setLastCategoryClick({ id: catId, timestamp: now });
 
     if (isSameCategory && isWithinOneSecond) {
@@ -962,13 +594,10 @@ function App() {
         fetchStreams(catId, true);
     } else if (!isSameCategory) {
         setSelectedCategory(catId);
-        setViewMode('list');
-        setSeriesInfo(null);
+        xcApi.setStreams([]);
+        backToList();
         fetchStreams(catId, false);
     } else {
-        // Same category but > 1s, just re-fetch from cache (or do nothing if already loaded)
-        // Usually clicking the same category again should probably still trigger a fetch
-        // so the user sees it's working/updating.
         fetchStreams(catId, false);
     }
   };
@@ -986,6 +615,7 @@ function App() {
   };
 
   const handleCloseContextMenu = () => setContextMenu(null);
+  
   const handleContextMenu = async (e, stream) => {
     e.preventDefault();
     const id = stream.stream_id || stream.series_id || stream.id;
@@ -993,7 +623,7 @@ function App() {
     setContextMenu({ mouseX: e.clientX, mouseY: e.clientY, stream, isLoading: !isEpisode });
 
     if (isEpisode) {
-        setContextMenu(prev => ({ ...prev, info: stream.info || stream, isLoading: false }));
+        setContextMenu(prev => ({ ...prev, info: stream.info || stream, rawData: stream, isLoading: false }));
         return;
     }
 
@@ -1015,7 +645,7 @@ function App() {
             const result = await window.api.xcApi(params);
             if (result.success) {
                 if (apiDebug) console.log(`[API DEBUG] ${action} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}:`, result.data);
-                setContextMenu(prev => ({ ...prev, info: result.data.info, isLoading: false }));
+                setContextMenu(prev => ({ ...prev, info: result.data.info, rawData: result.data, isLoading: false }));
             } else {
                 if (apiDebug) console.error(`[API DEBUG] ${action} Error:`, result.error);
                 setContextMenu(prev => ({ ...prev, isLoading: false }));
@@ -1038,9 +668,9 @@ function App() {
   };
 
   const getSectionColor = () => {
-    if (selectedSection === 'live') return '#ffd43b'; // Yellow
-    if (selectedSection === 'vod') return '#40c057';  // Green
-    if (selectedSection === 'series') return '#ff6b6b'; // Red
+    if (selectedSection === 'live') return '#ffd43b';
+    if (selectedSection === 'vod') return '#40c057';
+    if (selectedSection === 'series') return '#ff6b6b';
     return '#00d4ff'; 
   };
 
@@ -1062,7 +692,6 @@ function App() {
 
     const groups = {};
     
-    // Add synthetic Favorites category at the very top
     groups[" Favorites"] = [{
         category_id: 'favorites',
         category_name: '★ Favorites',
@@ -1089,20 +718,17 @@ function App() {
     let filtered = streams;
     const lowerQuery = searchQuery.toLowerCase();
 
-    // Filter by Search Query
     if (searchQuery) {
         filtered = filtered.filter(s =>
             (s.name || s.title || "").toLowerCase().includes(lowerQuery)
         );
     }
 
-    // Filter by English Only
     if (englishOnly) {
         const forbidden = ["SWEDEN", "NORWAY", "DENMARK", "FINLAND", "DEUTSCH", "FRENCH", "ITALIAN", "SPANISH"];
         filtered = filtered.filter(s => !forbidden.some(word => (s.name || s.title)?.toUpperCase().includes(word)));
     }
 
-    // Filter by Year (looking for (YYYY) in title)
     if (yearFilter !== 'none') {
         filtered = filtered.filter(s => {
             const title = s.name || s.title || "";
@@ -1110,7 +736,6 @@ function App() {
         });
     }
 
-    // Sort by Year if toggle is ON
     if (sortByYear) {
         const extractYear = (stream) => {
             const title = stream.name || stream.title || "";
@@ -1118,31 +743,26 @@ function App() {
             return yearMatch ? parseInt(yearMatch[1]) : null;
         };
 
-        // Separate streams with years and without years
         const withYears = filtered.filter(s => extractYear(s) !== null);
         const withoutYears = filtered.filter(s => extractYear(s) === null);
 
-        // Sort streams with years (newest first)
         withYears.sort((a, b) => {
             const yearA = extractYear(a);
             const yearB = extractYear(b);
-            return yearB - yearA; // Descending order (newest first)
+            return yearB - yearA;
         });
 
-        // Sort streams without years alphabetically
         withoutYears.sort((a, b) => {
             const nameA = (a.name || a.title || "").toLowerCase();
             const nameB = (b.name || b.title || "").toLowerCase();
             return nameA.localeCompare(nameB);
         });
 
-        // Combine: years first, then alphabetical
         filtered = [...withYears, ...withoutYears];
     }
 
     const totalCount = filtered.length;
 
-    // Progressive rendering: only show first displayCount items
     return {
       visibleStreams: filtered.slice(0, displayCount),
       totalFilteredCount: totalCount
@@ -1152,6 +772,7 @@ function App() {
   return (
     <div className="container" onClick={handleCloseContextMenu} style={{ '--section-accent': getSectionColor() }}>
       <div className="header">
+        {/* Left section: Profile info */}
         <div 
             style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
             onClick={fetchAccountInfo}
@@ -1162,8 +783,24 @@ function App() {
         </div>
         
         <div className="controls">
-          <button className="btn" onClick={() => setShowProfiles(true)} style={{ background: 'transparent', border: 'none' }}><Settings size={16} /> Profiles</button>
-          <div className="section-tabs">
+          {/* Profile button */}
+          <button className="btn" onClick={() => setShowProfiles(true)} style={{ background: 'transparent', border: 'none' }}>
+            <Settings size={16} /> Profiles
+          </button>
+
+          {/* Server dropdown */}
+          <select value={selectedServer} onChange={(e) => setSelectedServer(e.target.value)} style={{ width: '150px' }}>
+            {currentProfile?.servers?.map(url => <option key={url} value={url}>{url}</option>)}
+          </select>
+
+          {/* Section tabs in rounded rectangle */}
+          <div style={{
+            display: 'flex',
+            background: '#2c2e33',
+            borderRadius: '6px',
+            padding: '2px',
+            gap: '2px'
+          }}>
             {[{ id: 'live', color: '#ffd43b' }, { id: 'vod', color: '#40c057' }, { id: 'series', color: '#ff6b6b' }].map(s => (
                 <button 
                     key={s.id} 
@@ -1171,49 +808,103 @@ function App() {
                     onClick={() => { 
                         setSelectedSection(s.id); 
                         setSelectedCategory(null); 
-                        setViewMode('list'); 
-                        setSeriesInfo(null);
+                        backToList();
                         setLastCategoryClick({ id: null, timestamp: 0 });
                     }} 
                     style={{ 
-                        padding: '2px 12px', 
+                        padding: '4px 14px', 
                         fontSize: '0.7rem', 
                         backgroundColor: selectedSection === s.id ? s.color : 'transparent', 
                         color: selectedSection === s.id ? '#000' : '#909296',
-                        border: 'none'
+                        border: 'none',
+                        borderRadius: '4px',
+                        fontWeight: selectedSection === s.id ? 'bold' : 'normal'
                     }}
                 >
                     {s.id.toUpperCase()}
                 </button>
             ))}
           </div>
-          <label
+
+          {/* Book (Flip Book Mode) */}
+          <button
+            className="btn"
+            onClick={() => {
+              setFlipBookMode(!flipBookMode);
+              if (!flipBookMode) setFlipBookIndex(0);
+            }}
             style={{
+              background: 'transparent',
+              border: 'none',
+              color: flipBookMode ? getSectionColor() : '#909296',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '4px'
+            }}
+            title="Flip Book Mode"
+          >
+            <BookOpen size={16} />
+          </button>
+
+          {/* Plot toggle (text-based) */}
+          <button
+            onClick={() => {
+              if (selectedSection === 'vod' || selectedSection === 'series') {
+                setShowPlot(!showPlot);
+              }
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              fontSize: '0.75rem',
+              fontWeight: 'bold',
+              color: (selectedSection === 'vod' || selectedSection === 'series') 
+                ? (showPlot ? getSectionColor() : '#909296')
+                : '#555',
+              cursor: (selectedSection === 'vod' || selectedSection === 'series') ? 'pointer' : 'not-allowed',
+              padding: '4px 8px'
+            }}
+            title="Toggle Plot Display"
+          >
+            PLOT
+          </button>
+
+          {/* Download Manager */}
+          <button
+            className="btn"
+            onClick={() => setShowDownloadManager(!showDownloadManager)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: downloads.some(d => d.status === 'downloading') ? getSectionColor() : '#909296',
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
-              fontSize: '0.75rem',
-              cursor: 'pointer',
-              opacity: (selectedSection === 'vod' || selectedSection === 'series') ? 1 : 0.3,
-              pointerEvents: (selectedSection === 'vod' || selectedSection === 'series') ? 'auto' : 'none'
+              padding: '4px',
+              position: 'relative'
             }}
+            title="Download Manager"
           >
-            <input
-              type="checkbox"
-              checked={showPlot}
-              onChange={(e) => setShowPlot(e.target.checked)}
-              disabled={selectedSection === 'live'}
-            />
-            PLOT
-          </label>
-          <select value={selectedServer} onChange={(e) => setSelectedServer(e.target.value)} style={{ width: '150px' }}>
-            {currentProfile?.servers?.map(url => <option key={url} value={url}>{url}</option>)}
-          </select>
-          <button className="btn" onClick={() => fetchCategories(selectedSection, true)}><RefreshCw size={16} className={isLoading ? 'spin' : ''} /></button>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}>
-            <input type="checkbox" checked={englishOnly} onChange={(e) => setEnglishOnly(e.target.checked)} /> EN
-          </label>
+            <ArrowDown size={16} />
+            {downloads.filter(d => d.status !== 'completed' && d.status !== 'cancelled').length > 0 && (
+              <span style={{
+                fontSize: '0.7rem',
+                background: downloads.some(d => d.status === 'downloading') ? getSectionColor() : '#909296',
+                color: '#000',
+                borderRadius: '50%',
+                width: '18px',
+                height: '18px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 'bold'
+              }}>
+                {downloads.filter(d => d.status !== 'completed' && d.status !== 'cancelled').length}
+              </span>
+            )}
+          </button>
 
+          {/* Bug (API Debug) */}
           <button
             className="btn"
             onClick={() => {
@@ -1232,85 +923,86 @@ function App() {
           >
             <Bug size={16} />
           </button>
+
+          {/* Size slider */}
+          <input type="range" min="100" max="400" value={tileSize} onChange={(e) => setTileSize(Number(e.target.value))} style={{ width: '60px' }} />
+
+          {/* Chromecast / Player controls */}
+          <div className="player-selector" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {['vlc', 'internal', 'cast'].map(m => (
+              <React.Fragment key={m}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '0.7rem' }}>
+                  <input type="radio" checked={playerMode === m} onChange={() => setPlayerMode(m)} /> 
+                  <span onClick={m === 'vlc' ? handleVlcPathChange : undefined} style={{ cursor: m === 'vlc' ? 'pointer' : 'inherit' }}>{m.toUpperCase()}</span>
+                </label>
+                {m === 'cast' && playerMode === 'cast' && (
+                  <select value={selectedCastDevice} onChange={(e) => setSelectedCastDevice(e.target.value)} style={{ padding: '1px 4px', fontSize: '0.65rem', width: '100px', marginLeft: '2px', height: '20px' }}>
+                    {castDevices.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+
+          {/* Search bar */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search size={14} style={{ position: 'absolute', left: 6, top: 8, color: '#888', pointerEvents: 'none' }} />
+            <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ paddingLeft: '24px', paddingRight: searchQuery ? '24px' : '8px', width: '150px' }} />
+            {searchQuery && (
+              <X 
+                size={14} 
+                style={{ 
+                  position: 'absolute', 
+                  right: 6, 
+                  color: '#ff6b6b', 
+                  cursor: 'pointer'
+                }} 
+                onClick={() => setSearchQuery('')}
+              />
+            )}
+          </div>
+
+          {/* EN filter toggle (text-based) */}
           <button
-            className="btn"
-            onClick={() => setShowDownloadManager(!showDownloadManager)}
+            onClick={() => setEnglishOnly(!englishOnly)}
             style={{
               background: 'transparent',
               border: 'none',
-              color: downloads.some(d => d.status === 'downloading') ? '#40c057' : '#909296',
+              fontSize: '0.75rem',
+              fontWeight: 'bold',
+              color: englishOnly ? getSectionColor() : '#909296',
+              cursor: 'pointer',
+              padding: '4px 8px'
+            }}
+            title="English Only Filter"
+          >
+            EN
+          </button>
+
+          {/* Year dropdown */}
+          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} style={{ width: '80px', fontSize: '0.75rem' }}>
+            <option value="none">Year</option>
+            {Array.from({ length: new Date().getFullYear() - 1950 + 1 }, (_, i) => new Date().getFullYear() - i).map(year => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+
+          {/* Calendar (Sort by year) */}
+          <button
+            className="btn"
+            onClick={() => setSortByYear(!sortByYear)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: sortByYear ? getSectionColor() : '#909296',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px',
-              padding: '4px',
-              position: 'relative'
+              padding: '4px'
             }}
-            title="Download Manager"
+            title={sortByYear ? "Sort by year ON (newest first)" : "Sort by year OFF (natural order)"}
           >
-            <ArrowDown size={16} />
-            {downloads.filter(d => d.status !== 'completed' && d.status !== 'cancelled').length > 0 && (
-              <span style={{
-                fontSize: '0.7rem',
-                background: downloads.some(d => d.status === 'downloading') ? '#40c057' : '#909296',
-                color: '#000',
-                borderRadius: '50%',
-                width: '18px',
-                height: '18px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 'bold'
-              }}>
-                {downloads.filter(d => d.status !== 'completed' && d.status !== 'cancelled').length}
-              </span>
-            )}
+            <Calendar size={16} />
           </button>
-        </div>
-
-        <div style={{ flex: 1 }}></div>
-
-        <div className="controls">
-            <div className="player-selector" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                {['vlc', 'internal', 'cast'].map(m => (
-                    <React.Fragment key={m}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '0.7rem' }}>
-                            <input type="radio" checked={playerMode === m} onChange={() => setPlayerMode(m)} /> 
-                            <span onClick={m === 'vlc' ? handleVlcPathChange : undefined} style={{ cursor: m === 'vlc' ? 'pointer' : 'inherit' }}>{m.toUpperCase()}</span>
-                        </label>
-                        {m === 'cast' && playerMode === 'cast' && (
-                            <select value={selectedCastDevice} onChange={(e) => setSelectedCastDevice(e.target.value)} style={{ padding: '1px 4px', fontSize: '0.65rem', width: '100px', marginLeft: '2px', height: '20px' }}>
-                                {castDevices.map(name => <option key={name} value={name}>{name}</option>)}
-                            </select>
-                        )}
-                    </React.Fragment>
-                ))}
-            </div>
-            <input type="range" min="100" max="400" value={tileSize} onChange={(e) => setTileSize(Number(e.target.value))} style={{ width: '60px' }} />
-            <div style={{ position: 'relative' }}>
-                <Search size={14} style={{ position: 'absolute', left: 6, top: 8, color: '#888' }} />
-                <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ paddingLeft: '24px', width: '150px' }} />
-            </div>
-            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} style={{ width: '80px', fontSize: '0.75rem' }}>
-                <option value="none">Year</option>
-                {Array.from({ length: new Date().getFullYear() - 1950 + 1 }, (_, i) => new Date().getFullYear() - i).map(year => (
-                    <option key={year} value={year}>{year}</option>
-                ))}
-            </select>
-            <button
-                className="btn"
-                onClick={() => setSortByYear(!sortByYear)}
-                style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: sortByYear ? getSectionColor() : '#909296',
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '4px'
-                }}
-                title={sortByYear ? "Sort by year ON (newest first)" : "Sort by year OFF (natural order)"}
-            >
-                <Calendar size={16} />
-            </button>
         </div>
       </div>
 
@@ -1335,73 +1027,90 @@ function App() {
         </div>
 
         <div className="content-area">
-          <div className="sidebar-header" style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-            {viewMode === 'details' ? (
-                <><button className="btn" onClick={backToList} style={{ padding: '2px 8px', fontSize: '0.7rem' }}>← BACK</button>
-                <span style={{ color: 'var(--section-accent)', fontWeight: 'bold' }}>{seriesInfo?.info?.name}</span></>
-            ) : (
-                <span>
-                  Streams ({visibleStreams.length}
-                  {totalFilteredCount > visibleStreams.length && (
-                    <span style={{ color: '#888' }}> of {totalFilteredCount}</span>
-                  )})
-                </span>
-            )}
-          </div>
+          {flipBookMode && viewMode !== 'details' ? (
+            <FlipBookView
+              streams={visibleStreams}
+              currentIndex={flipBookIndex}
+              onIndexChange={setFlipBookIndex}
+              onPlay={playStream}
+              profileId={currentProfile?.id}
+              cacheMap={imageCacheMap}
+              apiDebug={apiDebug}
+              fetchMetadata={fetchStreamMetadata}
+              sectionColor={getSectionColor()}
+              sectionType={selectedSection}
+            />
+          ) : (
+            <>
+              <div className="sidebar-header" style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                {viewMode === 'details' ? (
+                    <><button className="btn" onClick={backToList} style={{ padding: '2px 8px', fontSize: '0.7rem' }}>← BACK</button>
+                    <span style={{ color: 'var(--section-accent)', fontWeight: 'bold' }}>{seriesInfo?.info?.name}</span></>
+                ) : (
+                    <span>
+                      Streams ({visibleStreams.length}
+                      {totalFilteredCount > visibleStreams.length && (
+                        <span style={{ color: '#888' }}> of {totalFilteredCount}</span>
+                      )})
+                    </span>
+                )}
+              </div>
 
-          <div className="stream-list" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))` }}>
-            {viewMode === 'details' ? (
-                Object.keys(seriesInfo?.episodes || {}).sort((a,b) => parseInt(a)-parseInt(b)).map(seasonNum => (
-                    <React.Fragment key={`season-${seasonNum}`}>
-                        <div className="section-header" style={{ marginTop: seasonNum === '1' ? '0' : '20px' }}>SEASON {seasonNum.padStart(2, '0')}</div>
-                                                {seriesInfo.episodes[seasonNum].map(ep => (
-                                                    <div key={ep.id} className="stream-card" onDoubleClick={() => playStream(ep, 'episode')} onContextMenu={(e) => handleContextMenu(e, ep)}>
-                                                        <CachedImage
-                                                            src={ep.info?.movie_image || seriesInfo?.info?.cover}
-                                                            alt={ep.title}
-                                                            className="stream-logo"
-                                                            profileId={currentProfile?.id}
-                                                            cacheMap={imageCacheMap}
-                                                            apiDebug={apiDebug}
-                                                        />
-                                                        <div className="stream-name">E{ep.episode_num}: {ep.title}</div>
-                                                    </div>
-                                                ))}
-                    </React.Fragment>
-                ))
-            ) : (
-                visibleStreams.map((s) => {
-                    const id = (s.stream_id || s.series_id || s.id).toString();
-                    return (
-                        <StreamCard
-                            key={id}
-                            stream={s}
-                            showPlot={showPlot}
-                            onDoubleClick={() => playStream(s)}
-                            onContextMenu={(e) => handleContextMenu(e, s)}
-                            profileId={currentProfile?.id}
-                            cacheMap={imageCacheMap}
-                            apiDebug={apiDebug}
-                            fetchMetadata={fetchStreamMetadata}
-                            metadataCache={metadataCache}
-                            sectionType={selectedSection}
-                            onDownload={handleDownload}
-                            isFavorite={favorites.includes(id)}
-                            onToggleFavorite={toggleFavorite}
-                        />
-                    );
-                })
-            )}
-          </div>
+              <div className="stream-list" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))` }}>
+                {viewMode === 'details' ? (
+                    Object.keys(seriesInfo?.episodes || {}).sort((a,b) => parseInt(a)-parseInt(b)).map(seasonNum => (
+                        <React.Fragment key={`season-${seasonNum}`}>
+                            <div className="section-header" style={{ marginTop: seasonNum === '1' ? '0' : '20px' }}>SEASON {seasonNum.padStart(2, '0')}</div>
+                                                    {seriesInfo.episodes[seasonNum].map(ep => (
+                                                        <div key={ep.id} className="stream-card" onDoubleClick={() => playStream(ep, 'episode')} onContextMenu={(e) => handleContextMenu(e, ep)}>
+                                                            <CachedImage
+                                                                src={ep.info?.movie_image || seriesInfo?.info?.cover}
+                                                                alt={ep.title}
+                                                                className="stream-logo"
+                                                                profileId={currentProfile?.id}
+                                                                cacheMap={imageCacheMap}
+                                                                apiDebug={apiDebug}
+                                                            />
+                                                            <div className="stream-name">E{ep.episode_num}: {ep.title}</div>
+                                                        </div>
+                                                    ))}
+                        </React.Fragment>
+                    ))
+                ) : (
+                    visibleStreams.map((s) => {
+                        const id = (s.stream_id || s.series_id || s.id).toString();
+                        return (
+                            <StreamCard
+                                key={id}
+                                stream={s}
+                                showPlot={showPlot}
+                                onDoubleClick={() => playStream(s)}
+                                onContextMenu={(e) => handleContextMenu(e, s)}
+                                profileId={currentProfile?.id}
+                                cacheMap={imageCacheMap}
+                                apiDebug={apiDebug}
+                                fetchMetadata={fetchStreamMetadata}
+                                metadataCache={metadataCache}
+                                sectionType={selectedSection}
+                                onDownload={handleDownload}
+                                isFavorite={favorites.includes(id)}
+                                onToggleFavorite={toggleFavorite}
+                            />
+                        );
+                    })
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       {currentStream && <VideoPlayer url={currentStream.url} title={currentStream.name || currentStream.title} onClose={() => setCurrentStream(null)} />}
 
       {accountInfo && (
-          <div className="modal-overlay" onClick={() => setAccountInfo(null)}>
+          <div className="modal-overlay" onClick={clearAccountInfo}>
               <div className="account-modal" onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
-                  <button className="close-modal-btn" onClick={() => setAccountInfo(null)}><X size={20} /></button>
+                  <button className="close-modal-btn" onClick={clearAccountInfo}><X size={20} /></button>
                   <div className="series-browser-header" style={{ marginBottom: '0' }}>
                       <div className="series-header-info"><h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><User size={24} /> Account Details</h2></div>
                   </div>
@@ -1484,24 +1193,34 @@ function App() {
 
                           <div style={{ marginTop: '8px' }}>
                             {info.director && <div className="metadata-row" style={{ fontSize: '0.8rem' }}><strong>Director:</strong> {info.director}</div>}
-                            {(info.releasedate || info.release_date) && (
-                              <div className="metadata-row" style={{ fontSize: '0.8rem' }}>
-                                <strong>Released:</strong> {(info.releasedate || info.release_date)}
-                              </div>
-                            )}
-                            {info.cast && (
-                              <div className="metadata-row" style={{ fontSize: '0.8rem', marginTop: '4px' }}>
-                                <strong>Cast:</strong> 
-                                <div className="metadata-text" style={{ fontStyle: 'italic', opacity: 0.8 }}>{info.cast}</div>
-                              </div>
-                            )}
+                            {info.cast && <div className="metadata-row" style={{ fontSize: '0.8rem' }}><strong>Cast:</strong> {info.cast}</div>}
+                            {info.genre && <div className="metadata-row" style={{ fontSize: '0.8rem' }}><strong>Genre:</strong> {info.genre}</div>}
+                            {info.releasedate && <div className="metadata-row" style={{ fontSize: '0.8rem' }}><strong>Released:</strong> {info.releasedate}</div>}
                           </div>
-                          <div className="context-menu-separator" />
                       </div>
                   ) : null}
                   <div className="context-menu-info"><strong>ID:</strong> {contextMenu.stream.stream_id || contextMenu.stream.series_id || contextMenu.stream.id}</div>
                   <div className="context-menu-info"><strong>Stream URL:</strong> <div className="url-text">{finalUrl || 'N/A'}</div></div>
                   {finalLogoUrl && <div className="context-menu-info"><strong>Logo URL:</strong> <div className="url-text">{finalLogoUrl}</div></div>}
+                  {contextMenu.rawData && (
+                      <div className="context-menu-info" style={{ marginTop: '5px', borderTop: '1px solid #373a40', paddingTop: '5px' }}>
+                          <details>
+                              <summary style={{ cursor: 'pointer', fontSize: '0.7rem', color: '#888' }}>Raw API Response</summary>
+                              <pre style={{ 
+                                  fontSize: '0.65rem', 
+                                  maxHeight: '150px', 
+                                  overflow: 'auto', 
+                                  backgroundColor: '#000', 
+                                  padding: '5px', 
+                                  marginTop: '5px',
+                                  color: '#40c057',
+                                  borderRadius: '4px'
+                              }}>
+                                  {JSON.stringify(contextMenu.rawData, null, 2)}
+                              </pre>
+                          </details>
+                      </div>
+                  )}
               </div>
           );
       })()}
