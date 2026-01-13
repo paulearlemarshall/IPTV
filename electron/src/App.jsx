@@ -6,6 +6,8 @@ import ProfileManager from './components/ProfileManager';
 import FlipBookView from './components/FlipBookView';
 import StarRating from './components/StarRating';
 import StreamCard from './components/StreamCard';
+import AccountModal from './components/AccountModal';
+import DownloadManagerUI from './components/DownloadManagerUI';
 import { useXCApi } from './hooks/useXCApi';
 import { useIntersectionObserver } from './hooks/useIntersectionObserver';
 import { useDownloadManager } from './hooks/useDownloadManager';
@@ -675,59 +677,7 @@ function App() {
 
       {currentStream && <VideoPlayer url={currentStream.url} title={currentStream.name || currentStream.title} onClose={() => setCurrentStream(null)} />}
 
-      {accountInfo && (
-          <div className="modal-overlay" onClick={clearAccountInfo}>
-              <div className="account-modal" onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
-                  <button className="close-modal-btn" onClick={clearAccountInfo}><X size={20} /></button>
-                  <div className="series-browser-header" style={{ marginBottom: '0' }}>
-                      <div className="series-header-info"><h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><User size={24} /> Account Details</h2></div>
-                  </div>
-                  <div className="account-body">
-                      <div className="account-grid">
-                          <div className="account-section">
-                              <h3>User Profile</h3>
-                              <div className="account-row"><span>Username:</span> <span>{accountInfo.user_info?.username}</span></div>
-                              <div className="account-row"><span>Password:</span> <span>{accountInfo.user_info?.password}</span></div>
-                              <div className="account-row"><span>Status:</span> <span style={{ color: accountInfo.user_info?.status === 'Active' ? '#40c057' : '#ff6b6b' }}>{accountInfo.user_info?.status}</span></div>
-                              <div className="account-row"><span>Expiry:</span> <span>{accountInfo.user_info?.exp_date ? new Date(parseInt(accountInfo.user_info.exp_date) * 1000).toLocaleDateString() : 'N/A'}</span></div>
-                              <div className="account-row"><span>Created:</span> <span>{accountInfo.user_info?.created_at ? new Date(parseInt(accountInfo.user_info.created_at) * 1000).toLocaleDateString() : 'N/A'}</span></div>
-                              <div className="account-row"><span>Trial:</span> <span>{accountInfo.user_info?.is_trial === "1" ? "Yes" : "No"}</span></div>
-                              <div className="account-row"><span>Auth:</span> <span>{accountInfo.user_info?.auth}</span></div>
-                          </div>
-                          <div className="account-section">
-                              <h3>Connections</h3>
-                              <div className="account-row"><span>Max Allowed:</span> <span>{accountInfo.user_info?.max_connections}</span></div>
-                              <div className="account-row"><span>Currently Active:</span> <span>{accountInfo.user_info?.active_cons}</span></div>
-                              <div className="account-row"><span>Formats:</span> <span>{accountInfo.user_info?.allowed_output_formats?.join(', ')}</span></div>
-                              <div className="account-row" style={{ marginTop: '10px' }}><span>Message:</span> <span style={{ fontStyle: 'italic' }}>{accountInfo.user_info?.message || "No system messages"}</span></div>
-                          </div>
-                      </div>
-
-                      <div className="account-section">
-                          <h3>Server Infrastructure</h3>
-                          <div className="account-grid">
-                              <div>
-                                  <div className="account-row"><span>URL:</span> <span>{accountInfo.server_info?.url}</span></div>
-                                  <div className="account-row"><span>HTTP Port:</span> <span>{accountInfo.server_info?.port}</span></div>
-                                  <div className="account-row"><span>HTTPS Port:</span> <span>{accountInfo.server_info?.https_port}</span></div>
-                                  <div className="account-row"><span>Protocol:</span> <span>{accountInfo.server_info?.server_protocol}</span></div>
-                              </div>
-                              <div>
-                                  <div className="account-row"><span>RTMP Port:</span> <span>{accountInfo.server_info?.rtmp_port}</span></div>
-                                  <div className="account-row"><span>Timezone:</span> <span>{accountInfo.server_info?.timezone}</span></div>
-                                  <div className="account-row"><span>Server Time:</span> <span>{accountInfo.server_info?.time_now}</span></div>
-                                  <div className="account-row"><span>Process:</span> <span>{accountInfo.server_info?.process ? "Running" : "Idle"}</span></div>
-                              </div>
-                          </div>
-                      </div>
-
-                      <div className="account-raw">
-                          <details><summary style={{ cursor: 'pointer', fontSize: '0.8rem', color: '#888' }}>Raw Response</summary><pre>{JSON.stringify(accountInfo, null, 2)}</pre></details>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
+      <AccountModal accountInfo={accountInfo} clearAccountInfo={clearAccountInfo} />
 
       {contextMenu && (() => {
           const isEpisode = !!contextMenu.stream.episode_num;
@@ -830,223 +780,15 @@ function App() {
         </div>
       )}
 
-      {showDownloadManager && (
-        <div style={{
-          position: 'fixed',
-          top: '60px',
-          right: '20px',
-          width: '450px',
-          maxHeight: '600px',
-          backgroundColor: 'var(--bg-secondary)',
-          border: '2px solid var(--border)',
-          borderRadius: '8px',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
-          zIndex: 10000,
-          display: 'flex',
-          flexDirection: 'column'
-        }}>
-          <div style={{
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            backgroundColor: 'var(--bg-dark)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Download size={18} color={getSectionColor()} />
-              <span style={{ fontWeight: 'bold' }}>Download Manager</span>
-            </div>
-            <button
-              onClick={() => setShowDownloadManager(false)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--text-secondary)',
-                padding: '4px'
-              }}
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          <div style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '8px'
-          }}>
-            {downloads.length === 0 ? (
-              <div style={{
-                padding: '40px',
-                textAlign: 'center',
-                color: 'var(--text-secondary)',
-                fontSize: '0.9rem'
-              }}>
-                No downloads yet. Click the download button on VOD or Series tiles to start.
-              </div>
-            ) : (
-              downloads.map((dl, index) => (
-                <div
-                  key={dl.id}
-                  style={{
-                    padding: '12px',
-                    marginBottom: '8px',
-                    backgroundColor: 'var(--bg-dark)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '6px'
-                  }}
-                >
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: '8px'
-                  }}>
-                    <div style={{
-                      flex: 1,
-                      fontSize: '0.85rem',
-                      fontWeight: 'bold',
-                      color: 'var(--text-primary)',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      marginRight: '8px'
-                    }}>
-                      {dl.name}
-                    </div>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      {index > 0 && (
-                        <button
-                          onClick={() => moveDownload(dl.id, 'up')}
-                          style={{
-                            background: 'transparent',
-                            border: '1px solid var(--border)',
-                            borderRadius: '3px',
-                            cursor: 'pointer',
-                            padding: '2px',
-                            display: 'flex',
-                            alignItems: 'center'
-                          }}
-                          title="Move up"
-                        >
-                          <ArrowUp size={14} color="var(--text-secondary)" />
-                        </button>
-                      )}
-                      {index < downloads.length - 1 && (
-                        <button
-                          onClick={() => moveDownload(dl.id, 'down')}
-                          style={{
-                            background: 'transparent',
-                            border: '1px solid var(--border)',
-                            borderRadius: '3px',
-                            cursor: 'pointer',
-                            padding: '2px',
-                            display: 'flex',
-                            alignItems: 'center'
-                          }}
-                          title="Move down"
-                        >
-                          <ArrowDown size={14} color="var(--text-secondary)" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          if (dl.status === 'downloading') {
-                            cancelDownload(dl.id);
-                          } else {
-                            removeDownload(dl.id);
-                          }
-                        }}
-                        style={{
-                          background: 'transparent',
-                          border: '1px solid #ff6b6b',
-                          borderRadius: '3px',
-                          cursor: 'pointer',
-                          padding: '2px',
-                          display: 'flex',
-                          alignItems: 'center'
-                        }}
-                        title={dl.status === 'downloading' ? 'Cancel' : 'Remove'}
-                      >
-                        <X size={14} color="#ff6b6b" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div style={{
-                    marginBottom: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    fontSize: '0.75rem'
-                  }}>
-                    <div style={{
-                      padding: '2px 6px',
-                      borderRadius: '3px',
-                      backgroundColor:
-                        dl.status === 'downloading' ? '#40c057' :
-                        dl.status === 'completed' ? '#228be6' :
-                        dl.status === 'error' ? '#ff6b6b' :
-                        dl.status === 'cancelled' ? '#909296' :
-                        '#ffd43b',
-                      color: '#000',
-                      fontWeight: 'bold',
-                      fontSize: '0.7rem'
-                    }}>
-                      {dl.status.toUpperCase()}
-                    </div>
-                    {dl.status === 'downloading' && (
-                      <span style={{ color: 'var(--text-secondary)' }}>{dl.speed}</span>
-                    )}
-                  </div>
-
-                  {(dl.status === 'downloading' || dl.status === 'queued') && (
-                    <div style={{
-                      width: '100%',
-                      height: '6px',
-                      backgroundColor: 'var(--border)',
-                      borderRadius: '3px',
-                      overflow: 'hidden'
-                    }}>
-                      <div style={{
-                        width: `${dl.progress}%`,
-                        height: '100%',
-                        backgroundColor: getSectionColor(),
-                        transition: 'width 0.3s ease'
-                      }} />
-                    </div>
-                  )}
-
-                  {dl.status === 'downloading' && (
-                    <div style={{
-                      marginTop: '4px',
-                      fontSize: '0.7rem',
-                      color: 'var(--text-secondary)',
-                      textAlign: 'right'
-                    }}>
-                      {dl.progress.toFixed(1)}%
-                    </div>
-                  )}
-
-                  {dl.error && (
-                    <div style={{
-                      marginTop: '6px',
-                      fontSize: '0.7rem',
-                      color: '#ff6b6b',
-                      padding: '4px',
-                      backgroundColor: 'rgba(255, 107, 107, 0.1)',
-                      borderRadius: '3px'
-                    }}>
-                      Error: {dl.error}
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+      <DownloadManagerUI 
+        showDownloadManager={showDownloadManager}
+        setShowDownloadManager={setShowDownloadManager}
+        downloads={downloads}
+        cancelDownload={cancelDownload}
+        removeDownload={removeDownload}
+        moveDownload={moveDownload}
+        getSectionColor={getSectionColor}
+      />
 
       <div className="status-bar">{status}</div>
     </div>
