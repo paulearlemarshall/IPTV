@@ -427,9 +427,6 @@ export function useXCApi({ apiDebug = false } = {}) {
 
         setMetadataCache(prev => ({ ...prev, [cacheKey]: metadata }));
         return metadata;
-      } else {
-        if (apiDebug) console.error(`[METADATA] ${action} Error for ID ${id}:`, result.error);
-      }
     } catch (err) {
       if (apiDebug) console.error(`[METADATA] ${action} Exception for ID ${id}:`, err);
     }
