@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Settings, RefreshCw, Play, Search, Copy, Download, Cast, ChevronRight, ChevronDown, X, User, Bug, Calendar, ArrowDown, ArrowUp, Star, BookOpen } from 'lucide-react';
+import { RefreshCw, X } from 'lucide-react';
 import VideoPlayer from './components/VideoPlayer';
 import CachedImage from './components/CachedImage';
 import ProfileManager from './components/ProfileManager';
 import FlipBookView from './components/FlipBookView';
-import StarRating from './components/StarRating';
 import StreamCard from './components/StreamCard';
 import AccountModal from './components/AccountModal';
 import DownloadManagerUI from './components/DownloadManagerUI';
+import Header from './components/Header';
+import Sidebar from './components/Sidebar';
+import ContextMenu from './components/ContextMenu';
 import { useXCApi } from './hooks/useXCApi';
-import { useIntersectionObserver } from './hooks/useIntersectionObserver';
 import { useDownloadManager } from './hooks/useDownloadManager';
 import { useFavorites } from './hooks/useFavorites';
 import { useFilteredStreams } from './hooks/useFilteredStreams';
@@ -339,261 +340,58 @@ function App() {
 
   return (
     <div className="container" onClick={handleCloseContextMenu} style={{ '--section-accent': getSectionColor() }}>
-      <div className="header">
-        {/* Left section: Profile info */}
-        <div 
-            style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-            onClick={fetchAccountInfo}
-            title="Click for Account Info"
-        >
-            <User size={20} color={getSectionColor()} /> 
-            <span className="rainbow-text">{currentProfile?.name || 'No Profile'}</span>
-        </div>
-        
-        <div className="controls">
-          {/* Profile button */}
-          <button className="btn" onClick={() => setShowProfiles(true)} style={{ background: 'transparent', border: 'none' }}>
-            <Settings size={16} /> Profiles
-          </button>
-
-          {/* Server dropdown */}
-          <select value={selectedServer} onChange={(e) => setSelectedServer(e.target.value)} style={{ width: '150px' }}>
-            {currentProfile?.servers?.map(url => <option key={url} value={url}>{url}</option>)}
-          </select>
-
-          {/* Section tabs in rounded rectangle */}
-          <div style={{
-            display: 'flex',
-            background: '#2c2e33',
-            borderRadius: '6px',
-            padding: '2px',
-            gap: '2px'
-          }}>
-            {[{ id: 'live', color: '#ffd43b' }, { id: 'vod', color: '#40c057' }, { id: 'series', color: '#ff6b6b' }].map(s => (
-                <button 
-                    key={s.id} 
-                    className="btn section-btn" 
-                    onClick={() => { 
-                        setSelectedSection(s.id); 
-                        setSelectedCategory(null); 
-                        setStreams([]);
-                        backToList();
-                        setLastCategoryClick({ id: null, timestamp: 0 });
-                    }} 
-                    style={{ 
-                        padding: '4px 14px', 
-                        fontSize: '0.7rem', 
-                        backgroundColor: selectedSection === s.id ? s.color : 'transparent', 
-                        color: selectedSection === s.id ? '#000' : '#909296',
-                        border: 'none',
-                        borderRadius: '4px',
-                        fontWeight: selectedSection === s.id ? 'bold' : 'normal'
-                    }}
-                >
-                    {s.id.toUpperCase()}
-                </button>
-            ))}
-          </div>
-
-          {/* Book (Flip Book Mode) */}
-          <button
-            className="btn"
-            onClick={() => {
-              setFlipBookMode(!flipBookMode);
-              if (!flipBookMode) setFlipBookIndex(0);
-            }}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: flipBookMode ? getSectionColor() : '#909296',
-              display: 'flex',
-              alignItems: 'center',
-              padding: '4px'
-            }}
-            title="Flip Book Mode"
-          >
-            <BookOpen size={16} />
-          </button>
-
-          {/* Plot toggle (text-based) */}
-          <button
-            onClick={() => {
-              if (selectedSection === 'vod' || selectedSection === 'series') {
-                setShowPlot(!showPlot);
-              }
-            }}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              fontSize: '0.75rem',
-              fontWeight: 'bold',
-              color: (selectedSection === 'vod' || selectedSection === 'series') 
-                ? (showPlot ? getSectionColor() : '#909296')
-                : '#555',
-              cursor: (selectedSection === 'vod' || selectedSection === 'series') ? 'pointer' : 'not-allowed',
-              padding: '4px 8px'
-            }}
-            title="Toggle Plot Display"
-          >
-            PLOT
-          </button>
-
-          {/* Download Manager */}
-          <button
-            className="btn"
-            onClick={() => setShowDownloadManager(!showDownloadManager)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: downloads.some(d => d.status === 'downloading') ? getSectionColor() : '#909296',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px',
-              position: 'relative'
-            }}
-            title="Download Manager"
-          >
-            <ArrowDown size={16} />
-            {downloads.filter(d => d.status !== 'completed' && d.status !== 'cancelled').length > 0 && (
-              <span style={{
-                fontSize: '0.7rem',
-                background: downloads.some(d => d.status === 'downloading') ? getSectionColor() : '#909296',
-                color: '#000',
-                borderRadius: '50%',
-                width: '18px',
-                height: '18px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 'bold'
-              }}>
-                {downloads.filter(d => d.status !== 'completed' && d.status !== 'cancelled').length}
-              </span>
-            )}
-          </button>
-
-          {/* Bug (API Debug) */}
-          <button
-            className="btn"
-            onClick={() => {
-                setApiDebug(!apiDebug);
-                setStatus(`API Debug: ${!apiDebug ? 'ON' : 'OFF'}`);
-            }}
-            style={{
-                background: 'transparent',
-                border: 'none',
-                color: apiDebug ? '#ff6b6b' : '#909296',
-                display: 'flex',
-                alignItems: 'center',
-                padding: '4px'
-            }}
-            title="Toggle API Debug"
-          >
-            <Bug size={16} />
-          </button>
-
-          {/* Size slider */}
-          <input type="range" min="100" max="400" value={tileSize} onChange={(e) => setTileSize(Number(e.target.value))} style={{ width: '60px' }} />
-
-          {/* Chromecast / Player controls */}
-          <div className="player-selector" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {['vlc', 'internal', 'cast'].map(m => (
-              <React.Fragment key={m}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '0.7rem' }}>
-                  <input type="radio" name="playerMode" checked={playerMode === m} onChange={() => setPlayerMode(m)} /> 
-                  <span onClick={m === 'vlc' ? handleVlcPathChange : undefined} style={{ cursor: m === 'vlc' ? 'pointer' : 'inherit' }}>{m.toUpperCase()}</span>
-                </label>
-                {m === 'cast' && playerMode === 'cast' && (
-                  <select value={selectedCastDevice} onChange={(e) => setSelectedCastDevice(e.target.value)} style={{ padding: '1px 4px', fontSize: '0.65rem', width: '100px', marginLeft: '2px', height: '20px' }}>
-                    {castDevices.map(name => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-
-          {/* Search bar */}
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <Search size={14} style={{ position: 'absolute', left: 6, top: 8, color: '#888', pointerEvents: 'none' }} />
-            <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ paddingLeft: '24px', paddingRight: searchQuery ? '24px' : '8px', width: '150px' }} />
-            {searchQuery && (
-              <X 
-                size={14} 
-                style={{ 
-                  position: 'absolute', 
-                  right: 6, 
-                  color: '#ff6b6b', 
-                  cursor: 'pointer'
-                }} 
-                onClick={() => setSearchQuery('')}
-              />
-            )}
-          </div>
-
-          {/* EN filter toggle (text-based) */}
-          <button
-            onClick={() => setEnglishOnly(!englishOnly)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              fontSize: '0.75rem',
-              fontWeight: 'bold',
-              color: englishOnly ? getSectionColor() : '#909296',
-              cursor: 'pointer',
-              padding: '4px 8px'
-            }}
-            title="English Only Filter"
-          >
-            EN
-          </button>
-
-          {/* Year dropdown */}
-          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} style={{ width: '80px', fontSize: '0.75rem' }}>
-            <option value="none">Year</option>
-            {Array.from({ length: new Date().getFullYear() - 1950 + 1 }, (_, i) => new Date().getFullYear() - i).map(year => (
-              <option key={year} value={year}>{year}</option>
-            ))}
-          </select>
-
-          {/* Calendar (Sort by year) */}
-          <button
-            className="btn"
-            onClick={() => setSortByYear(!sortByYear)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: sortByYear ? getSectionColor() : '#909296',
-              display: 'flex',
-              alignItems: 'center',
-              padding: '4px'
-            }}
-            title={sortByYear ? "Sort by year ON (newest first)" : "Sort by year OFF (natural order)"}
-          >
-            <Calendar size={16} />
-          </button>
-        </div>
-      </div>
+      <Header 
+        currentProfile={currentProfile}
+        selectedServer={selectedServer}
+        setSelectedServer={setSelectedServer}
+        setShowProfiles={setShowProfiles}
+        fetchAccountInfo={fetchAccountInfo}
+        getSectionColor={getSectionColor}
+        selectedSection={selectedSection}
+        setSelectedSection={setSelectedSection}
+        setSelectedCategory={setSelectedCategory}
+        setStreams={setStreams}
+        backToList={backToList}
+        setLastCategoryClick={setLastCategoryClick}
+        flipBookMode={flipBookMode}
+        setFlipBookMode={setFlipBookMode}
+        setFlipBookIndex={setFlipBookIndex}
+        showPlot={showPlot}
+        setShowPlot={setShowPlot}
+        downloads={downloads}
+        setShowDownloadManager={setShowDownloadManager}
+        showDownloadManager={showDownloadManager}
+        apiDebug={apiDebug}
+        setApiDebug={setApiDebug}
+        setStatus={setStatus}
+        tileSize={tileSize}
+        setTileSize={setTileSize}
+        playerMode={playerMode}
+        setPlayerMode={setPlayerMode}
+        handleVlcPathChange={handleVlcPathChange}
+        castDevices={castDevices}
+        selectedCastDevice={selectedCastDevice}
+        setSelectedCastDevice={setSelectedCastDevice}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        englishOnly={englishOnly}
+        setEnglishOnly={setEnglishOnly}
+        sortByYear={sortByYear}
+        setSortByYear={setSortByYear}
+        yearFilter={yearFilter}
+        setYearFilter={setYearFilter}
+      />
 
       <div className="main-content">
         {showProfiles && <ProfileManager onClose={() => setShowProfiles(false)} onProfileChanged={setCurrentProfile} />}
-        <div className="sidebar">
-          <div className="sidebar-header">Categories</div>
-          <div className="sidebar-list">
-            {Object.entries(groupedCategories).sort().map(([prefix, cats]) => (
-                <div key={prefix}>
-                    <div className="group-header" onClick={() => setExpandedGroups(p => ({...p, [prefix]: !p[prefix]}))}>
-                        {expandedGroups[prefix] ? <ChevronDown size={14} /> : <ChevronRight size={14} />} {prefix}
-                    </div>
-                    {expandedGroups[prefix] && cats.map(cat => (
-                        <div key={cat.category_id} className={`category-item ${selectedCategory === cat.category_id ? 'active' : ''}`} onClick={() => handleCategoryClick(cat.category_id)} style={{ paddingLeft: '32px' }}>
-                            {cat.category_name}
-                        </div>
-                    ))}
-                </div>
-            ))}
-          </div>
-        </div>
+        
+        <Sidebar 
+          groupedCategories={groupedCategories}
+          expandedGroups={expandedGroups}
+          setExpandedGroups={setExpandedGroups}
+          selectedCategory={selectedCategory}
+          handleCategoryClick={handleCategoryClick}
+        />
 
         <div className="content-area">
           {flipBookMode && viewMode !== 'details' ? (
@@ -679,69 +477,15 @@ function App() {
 
       <AccountModal accountInfo={accountInfo} clearAccountInfo={clearAccountInfo} />
 
-      {contextMenu && (() => {
-          const isEpisode = !!contextMenu.stream.episode_num;
-          const finalUrl = getXcUrl(contextMenu.stream, isEpisode ? 'episode' : selectedSection, currentProfile, selectedServer);
-          const finalLogoUrl = getXcLogoUrl(contextMenu.stream, selectedServer);
-          const info = contextMenu.info;
-          return (
-              <div className="context-menu" style={{ top: contextMenu.mouseY, left: contextMenu.mouseX }} onClick={e => e.stopPropagation()}>
-                  <div className="context-menu-item" onClick={() => copyToClipboard(finalUrl)}><Copy size={14} /> <span>Copy Stream URL</span></div>
-                  {finalLogoUrl && <div className="context-menu-item" onClick={() => copyToClipboard(finalLogoUrl)}><Copy size={14} /> <span>Copy Logo URL</span></div>}
-                  <div className="context-menu-separator" />
-                  {contextMenu.isLoading ? (
-                      <div className="context-menu-info" style={{ textAlign: 'center', opacity: 0.6 }}>Loading metadata...</div>
-                  ) : info ? (
-                      <div className="context-menu-metadata" style={{ minWidth: '300px' }}>
-                          <div className="metadata-row" style={{ color: 'var(--section-accent)', fontWeight: 'bold', marginBottom: '8px', fontSize: '1rem' }}>
-                            {contextMenu.stream.name || contextMenu.stream.title}
-                          </div>
-                          
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                            <StarRating rating={parseFloat(info.rating || 0)} />
-                            {info.duration && <span style={{ fontSize: '0.75rem', color: '#888' }}>{info.duration}</span>}
-                          </div>
-
-                          {(info.plot || contextMenu.stream.plot) && (
-                            <div className="metadata-row">
-                              <strong>Plot:</strong> 
-                              <div className="metadata-text" style={{ maxHeight: '100px', overflowY: 'auto' }}>{info.plot || contextMenu.stream.plot}</div>
-                            </div>
-                          )}
-
-                          <div style={{ marginTop: '8px' }}>
-                            {info.director && <div className="metadata-row" style={{ fontSize: '0.8rem' }}><strong>Director:</strong> {info.director}</div>}
-                            {info.cast && <div className="metadata-row" style={{ fontSize: '0.8rem' }}><strong>Cast:</strong> {info.cast}</div>}
-                            {info.genre && <div className="metadata-row" style={{ fontSize: '0.8rem' }}><strong>Genre:</strong> {info.genre}</div>}
-                            {info.releasedate && <div className="metadata-row" style={{ fontSize: '0.8rem' }}><strong>Released:</strong> {info.releasedate}</div>}
-                          </div>
-                      </div>
-                  ) : null}
-                  <div className="context-menu-info"><strong>ID:</strong> {contextMenu.stream.stream_id || contextMenu.stream.series_id || contextMenu.stream.id}</div>
-                  <div className="context-menu-info"><strong>Stream URL:</strong> <div className="url-text">{finalUrl || 'N/A'}</div></div>
-                  {finalLogoUrl && <div className="context-menu-info"><strong>Logo URL:</strong> <div className="url-text">{finalLogoUrl}</div></div>}
-                  {contextMenu.rawData && (
-                      <div className="context-menu-info" style={{ marginTop: '5px', borderTop: '1px solid #373a40', paddingTop: '5px' }}>
-                          <details>
-                              <summary style={{ cursor: 'pointer', fontSize: '0.7rem', color: '#888' }}>Raw API Response</summary>
-                              <pre style={{ 
-                                  fontSize: '0.65rem', 
-                                  maxHeight: '150px', 
-                                  overflow: 'auto', 
-                                  backgroundColor: '#000', 
-                                  padding: '5px', 
-                                  marginTop: '5px',
-                                  color: '#40c057',
-                                  borderRadius: '4px'
-                              }}>
-                                  {JSON.stringify(contextMenu.rawData, null, 2)}
-                              </pre>
-                          </details>
-                      </div>
-                  )}
-              </div>
-          );
-      })()}
+      <ContextMenu 
+        contextMenu={contextMenu}
+        getXcUrl={getXcUrl}
+        selectedSection={selectedSection}
+        currentProfile={currentProfile}
+        selectedServer={selectedServer}
+        getXcLogoUrl={getXcLogoUrl}
+        copyToClipboard={copyToClipboard}
+      />
 
       {isRendering && (
         <div style={{
