@@ -253,17 +253,24 @@ function App() {
     
     setLastCategoryClick({ id: catId, timestamp: now });
 
+    // Handle cache-bypassing refresh (double click)
     if (isSameCategory && isWithinOneSecond) {
         if (apiDebug) console.log(`[REFRESH] Double-click detected for category ${catId}. Purging cache...`);
         fetchStreams(catId, true);
-    } else if (!isSameCategory) {
+        return;
+    }
+
+    // Handle new category selection
+    if (!isSameCategory) {
         setSelectedCategory(catId);
         xcApi.setStreams([]);
         backToList();
         fetchStreams(catId, false);
-    } else {
-        fetchStreams(catId, false);
+        return;
     }
+
+    // Normal click on already selected category
+    fetchStreams(catId, false);
   };
 
   const handleVlcPathChange = async () => {

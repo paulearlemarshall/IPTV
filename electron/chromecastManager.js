@@ -25,67 +25,69 @@ function initChromecastHandlers(ipcMain, mainWindow) {
     // --- Local Proxy Server for Chromecast ---
     const proxyServer = http.createServer(async (req, res) => {
         const parsedUrl = url.parse(req.url, true);
-        if (parsedUrl.pathname === '/stream' && parsedUrl.query.url) {
-            const streamUrl = parsedUrl.query.url;
-            console.log(`Proxying stream for Chromecast: ${streamUrl}`);
+        
+        // Early exit for invalid paths
+        if (parsedUrl.pathname !== '/stream' || !parsedUrl.query.url) {
+            res.statusCode = 404;
+            return res.end();
+        }
+
+        const streamUrl = parsedUrl.query.url;
+        console.log(`Proxying stream for Chromecast: ${streamUrl}`);
+        
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        };
+
+        if (req.headers.range) {
+            headers['Range'] = req.headers.range;
+        }
+
+        // Forward additional headers for better compatibility with strict providers
+        if (req.headers['accept']) headers['Accept'] = req.headers['accept'];
+        if (req.headers['accept-language']) headers['Accept-Language'] = req.headers['accept-language'];
+
+        try {
+            const response = await axios({
+                method: 'get',
+                url: streamUrl,
+                responseType: 'stream',
+                headers: headers,
+                timeout: 30000,
+                maxRedirects: 5 // Handle server-side redirects common in IPTV
+            });
+
+            res.statusCode = response.status;
             
-            const headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            const contentTypes = {
+                'ts': 'video/mp2t',
+                'm3u8': 'application/x-mpegURL',
+                'mp4': 'video/mp4',
+                'mkv': 'video/x-matroska'
             };
 
-            if (req.headers.range) {
-                headers['Range'] = req.headers.range;
+            let contentType = response.headers['content-type'];
+            if (!contentType || contentType === 'application/octet-stream') {
+                const ext = streamUrl.split('.').pop().split('?')[0];
+                contentType = contentTypes[ext] || 'video/mp2t';
             }
 
-            // Forward additional headers for better compatibility with strict providers
-            if (req.headers['accept']) headers['Accept'] = req.headers['accept'];
-            if (req.headers['accept-language']) headers['Accept-Language'] = req.headers['accept-language'];
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            
+            if (response.headers['content-length']) res.setHeader('Content-Length', response.headers['content-length']);
+            if (response.headers['accept-ranges']) res.setHeader('Accept-Ranges', response.headers['accept-ranges']);
+            if (response.headers['content-range']) res.setHeader('Content-Range', response.headers['content-range']);
+            
+            response.data.pipe(res);
 
-            try {
-                const response = await axios({
-                    method: 'get',
-                    url: streamUrl,
-                    responseType: 'stream',
-                    headers: headers,
-                    timeout: 30000,
-                    maxRedirects: 5 // Handle server-side redirects common in IPTV
-                });
-
-                res.statusCode = response.status;
-                
-                const contentTypes = {
-                    'ts': 'video/mp2t',
-                    'm3u8': 'application/x-mpegURL',
-                    'mp4': 'video/mp4',
-                    'mkv': 'video/x-matroska'
-                };
-
-                let contentType = response.headers['content-type'];
-                if (!contentType || contentType === 'application/octet-stream') {
-                    const ext = streamUrl.split('.').pop().split('?')[0];
-                    contentType = contentTypes[ext] || 'video/mp2t';
-                }
-
-                res.setHeader('Content-Type', contentType);
-                res.setHeader('Access-Control-Allow-Origin', '*');
-                
-                if (response.headers['content-length']) res.setHeader('Content-Length', response.headers['content-length']);
-                if (response.headers['accept-ranges']) res.setHeader('Accept-Ranges', response.headers['accept-ranges']);
-                if (response.headers['content-range']) res.setHeader('Content-Range', response.headers['content-range']);
-                
-                response.data.pipe(res);
-
-                req.on('close', () => {
-                    if (response.data.destroy) response.data.destroy();
-                });
-            } catch (e) {
-                console.error("Proxy error:", e.message);
-                res.statusCode = 500;
-                res.end(`Proxy Error: ${e.message}`);
-            }
-        } else {
-            res.statusCode = 404;
-            res.end();
+            req.on('close', () => {
+                if (response.data.destroy) response.data.destroy();
+            });
+        } catch (e) {
+            console.error("Proxy error:", e.message);
+            res.statusCode = 500;
+            res.end(`Proxy Error: ${e.message}`);
         }
     });
 

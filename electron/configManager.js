@@ -52,20 +52,23 @@ function initConfigHandlers(ipcMain, dialog, mainWindow, USER_DATA_PATH, TRENDY_
 
     ipcMain.handle('get-config', async () => {
         const fs = require('fs');
-        if (fs.existsSync(CONFIG_FILE)) return parseINI(fs.readFileSync(CONFIG_FILE, 'utf-8'));
-        const initial = { 
-            activeProfileId: TRENDY_ID, 
-            vlcPath: process.platform === 'win32' ? 'C:\\Program Files\\VideoLAN\\VLC\\vlc.exe' : '', 
-            profiles: [{
-                id: TRENDY_ID, 
-                name: "Trendystream", 
-                username: "c91392c3e194", 
-                password: "7657840f7676", 
-                servers: ["http://vpn.tsclean.cc","http://line.tsclean.cc","http://line.protv.cc:8000","http://line.beetx.cc"]
-            }] 
-        };
-        fs.writeFileSync(CONFIG_FILE, stringifyINI(initial));
-        return initial;
+        if (!fs.existsSync(CONFIG_FILE)) {
+            const initial = { 
+                activeProfileId: TRENDY_ID, 
+                vlcPath: process.platform === 'win32' ? 'C:\\Program Files\\VideoLAN\\VLC\\vlc.exe' : '', 
+                profiles: [{
+                    id: TRENDY_ID, 
+                    name: "Trendystream", 
+                    username: "c91392c3e194", 
+                    password: "7657840f7676", 
+                    servers: ["http://vpn.tsclean.cc","http://line.tsclean.cc","http://line.protv.cc:8000","http://line.beetx.cc"]
+                }] 
+            };
+            fs.writeFileSync(CONFIG_FILE, stringifyINI(initial));
+            return initial;
+        }
+
+        return parseINI(fs.readFileSync(CONFIG_FILE, 'utf-8'));
     });
 
     ipcMain.handle('select-vlc-path', async () => {
