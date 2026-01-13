@@ -7,20 +7,21 @@ function initXCHandlers(ipcMain) {
     ipcMain.handle('xc-api', async (event, { server, username, password, action, extraParams = {}, bypassCache = false }) => {
         const cacheKey = JSON.stringify({ server, username, action, extraParams });
         const now = Date.now();
+        const paramsDesc = Object.entries(extraParams).map(([k, v]) => `${k}=${v}`).join(', ') || 'no params';
 
-        if (bypassCache) console.log(`[Cache] Manual bypass for ${action}`);
+        if (bypassCache) console.log(`[Cache] Manual bypass for ${action} (${paramsDesc})`);
 
         if (!bypassCache && apiCache.has(cacheKey)) {
             const entry = apiCache.get(cacheKey);
             const age = now - entry.timestamp;
             if (age < CACHE_TTL) {
-                console.log(`[Cache] HIT: ${action} (Age: ${(age/1000).toFixed(1)}s)`);
+                console.log(`[Cache] HIT: ${action} (${paramsDesc}) (Age: ${(age/1000).toFixed(1)}s)`);
                 return { success: true, data: entry.data, fromCache: true };
             } else {
-                console.log(`[Cache] EXPIRED: ${action} (Age: ${(age/1000).toFixed(1)}s)`);
+                console.log(`[Cache] EXPIRED: ${action} (${paramsDesc}) (Age: ${(age/1000).toFixed(1)}s)`);
             }
         } else if (!bypassCache) {
-            console.log(`[Cache] MISS: ${action}`);
+            console.log(`[Cache] MISS: ${action} (${paramsDesc})`);
         }
 
         const startTime = performance.now();
@@ -34,6 +35,8 @@ function initXCHandlers(ipcMain) {
             Object.entries(extraParams).forEach(([key, val]) => {
                 url.searchParams.append(key, val);
             });
+
+            console.log(`[API Proxy] Fetching: ${url.toString().replace(password, '******')}`);
 
             const response = await axios.get(url.toString(), { 
                 timeout: 20000,
