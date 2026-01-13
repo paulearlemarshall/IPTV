@@ -4,6 +4,9 @@ const axios = require('axios');
 const os = require('os');
 const ChromecastAPI = require('chromecast-api');
 
+/**
+ * Helper: find a local non-internal IPv4 address
+ */
 function getLocalIP() {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
@@ -19,8 +22,17 @@ function getLocalIP() {
 function initChromecastHandlers(ipcMain, mainWindow) {
     const PROXY_PORT = 5181;
     const castClient = new ChromecastAPI();
-    let castDevices = {};
+
+    // Internal state
+    let castDevices = {}; // name -> device
     let activeCastDeviceName = null;
+
+    // Pending device names to send to renderer when ready
+    const pendingDeviceNames = new Set();
+    let flushHookAttached = false;
+
+    // Polling handle
+    let pollIntervalHandle = null;
 
     // --- Local Proxy Server for Chromecast ---
     const proxyServer = http.createServer(async (req, res) => {
@@ -95,39 +107,152 @@ function initChromecastHandlers(ipcMain, mainWindow) {
         console.log(`Stream proxy for Chromecast listening on http://${getLocalIP()}:${PROXY_PORT}`);
     });
 
-    // --- Discovery ---
-    castClient.on('device', function (device) {
+    // -----------------------
+    // Internal helper APIs
+    // -----------------------
+
+    function notifyRendererDeviceFound(name) {
+        if (!name) return;
+        try {
+            const win = mainWindow;
+            if (!win || win.isDestroyed()) {
+                // queue it
+                pendingDeviceNames.add(name);
+                attachFlushOnLoad(win);
+                return;
+            }
+
+            const wc = win.webContents;
+            if (!wc || wc.isLoading()) {
+                pendingDeviceNames.add(name);
+                attachFlushOnLoad(win);
+                return;
+            }
+
+            // ready to send
+            wc.send('cast-device-found', name);
+        } catch (e) {
+            // On any unexpected error, queue for later
+            pendingDeviceNames.add(name);
+            attachFlushOnLoad(mainWindow);
+        }
+    }
+
+    function attachFlushOnLoad(win) {
+        if (flushHookAttached || !win) return;
+        const wc = win.webContents;
+        if (!wc) return;
+        flushHookAttached = true;
+        wc.once('did-finish-load', () => {
+            flushHookAttached = false;
+            flushPendingDeviceNames();
+        });
+    }
+
+    function flushPendingDeviceNames() {
+        const win = mainWindow;
+        if (!win || win.isDestroyed()) return;
+        const wc = win.webContents;
+        if (!wc || wc.isLoading()) {
+            attachFlushOnLoad(win);
+            return;
+        }
+
+        for (const name of pendingDeviceNames) {
+            try {
+                wc.send('cast-device-found', name);
+            } catch (e) {
+                console.error('[Chromecast] Failed to send queued device name to renderer:', e && e.message);
+            }
+        }
+        pendingDeviceNames.clear();
+    }
+
+    function handleDeviceFound(device) {
         const name = device.friendlyName || device.name;
+        if (!name) return;
         if (!castDevices[name]) {
             console.log(`[Chromecast] Found device: ${name} at ${device.host}`);
             castDevices[name] = device;
-            if (mainWindow) mainWindow.webContents.send('cast-device-found', name);
+            notifyRendererDeviceFound(name);
         }
-    });
+    }
 
-    // Periodically scan for Chromecast devices to keep the list fresh
-    const scanInterval = setInterval(() => {
-        if (castClient) {
+    function initializeChromecast() {
+        // remove previous listeners to avoid duplicates
+        try {
+            castClient.removeAllListeners('device');
+        } catch (e) {
+            // ignore
+        }
+        castClient.on('device', handleDeviceFound);
+
+        // ensure we have an initial discovery kick-off
+        try {
             castClient.update();
+        } catch (e) {
+            console.error('[Chromecast] initializeChromecast update failed:', e && e.message);
         }
-    }, 30000);
+    }
 
-    // --- IPC Handlers ---
-    ipcMain.handle('cast-scan', async () => { 
-        console.log("[Chromecast] Starting network scan...");
-        castClient.update(); 
-        return Object.keys(castDevices); 
-    });
+    function startDevicePolling(intervalMs = 30000) {
+        // immediate kick-off
+        try {
+            castClient.update();
+        } catch (e) {
+            console.error('[Chromecast] startDevicePolling immediate update failed:', e && e.message);
+        }
 
-    ipcMain.handle('cast-play', async (event, deviceName, streamUrl, metadata = {}) => {
+        // avoid multiple intervals
+        if (pollIntervalHandle) clearInterval(pollIntervalHandle);
+
+        pollIntervalHandle = setInterval(() => {
+            try {
+                castClient.update();
+            } catch (e) {
+                console.error('[Chromecast] Polling update failed:', e && e.message);
+            }
+        }, intervalMs);
+
+        return pollIntervalHandle;
+    }
+
+    function stopDevicePolling() {
+        if (pollIntervalHandle) {
+            clearInterval(pollIntervalHandle);
+            pollIntervalHandle = null;
+        }
+    }
+
+    async function scanForDevices() {
+        try {
+            castClient.update();
+        } catch (e) {
+            console.error('[Chromecast] scanForDevices update failed:', e && e.message);
+        }
+        return Object.keys(castDevices);
+    }
+
+    function clearDeviceCache() {
+        castDevices = {};
+        activeCastDeviceName = null;
+        pendingDeviceNames.clear();
+    }
+
+    function buildProxyUrl(streamUrl) {
+        return `http://${getLocalIP()}:${PROXY_PORT}/stream?url=${encodeURIComponent(streamUrl)}`;
+    }
+
+    function playOnChromecast(deviceName, streamUrl, metadata = {}) {
         const device = castDevices[deviceName];
         if (!device) {
-            console.error(`[Cast] Playback failed: Device "${deviceName}" not found in cache.`);
-            return { success: false, error: 'Device not found' };
+            const msg = `Device "${deviceName}" not found`;
+            console.error(`[Cast] Playback failed: ${msg}`);
+            return Promise.resolve({ success: false, error: msg });
         }
         activeCastDeviceName = deviceName;
-        const proxyUrl = `http://${getLocalIP()}:${PROXY_PORT}/stream?url=${encodeURIComponent(streamUrl)}`;
-        
+        const proxyUrl = buildProxyUrl(streamUrl);
+
         console.log(`[Cast] Sending stream to ${deviceName}...`);
         console.log(`[Cast] Original URL: ${streamUrl}`);
         console.log(`[Cast] Proxy URL: ${proxyUrl}`);
@@ -137,32 +262,82 @@ function initChromecastHandlers(ipcMain, mainWindow) {
             images: metadata.images || []
         };
 
-        return new Promise((resolve) => { 
+        return new Promise((resolve) => {
             device.play(proxyUrl, options, (err) => {
                 if (err) {
-                    console.error(`[Cast] Playback Error on ${deviceName}:`, err.message);
-                    resolve({ success: false, error: err.message });
+                    console.error(`[Cast] Playback Error on ${deviceName}:`, err && err.message);
+                    resolve({ success: false, error: err && err.message });
                 } else {
                     console.log(`[Cast] Playback started successfully on ${deviceName}`);
                     resolve({ success: true });
                 }
-            }); 
+            });
         });
+    }
+
+    function stopChromecast(deviceName) {
+        const name = deviceName || activeCastDeviceName;
+        const device = castDevices[name];
+        if (!device) return Promise.resolve({ success: false });
+
+        return new Promise((resolve) => {
+            device.stop(() => {
+                if (name === activeCastDeviceName) activeCastDeviceName = null;
+                resolve({ success: true });
+            });
+        });
+    }
+
+    function getActiveCastDevice() {
+        return activeCastDeviceName;
+    }
+
+    function getAllDevices() {
+        return Object.keys(castDevices);
+    }
+
+    // -----------------------
+    // Start initial discovery
+    // -----------------------
+    initializeChromecast();
+    // keep the legacy periodic scanning behavior running by default (30s)
+    const scanInterval = startDevicePolling(30000);
+
+    // --- IPC Handlers (kept for compatibility with renderer calls) ---
+    ipcMain.handle('cast-scan', async () => { 
+        console.log("[Chromecast] Starting network scan...");
+        return scanForDevices();
+    });
+
+    ipcMain.handle('cast-play', async (event, deviceName, streamUrl, metadata = {}) => {
+        return playOnChromecast(deviceName, streamUrl, metadata);
     });
 
     ipcMain.handle('cast-stop', async (event, deviceName) => {
-        const name = deviceName || activeCastDeviceName;
-        const device = castDevices[name];
-        if (!device) return { success: false };
-        return new Promise((resolve) => { 
-            device.stop(() => { 
-                if (name === activeCastDeviceName) activeCastDeviceName = null; 
-                resolve({ success: true }); 
-            }); 
-        });
+        return stopChromecast(deviceName);
     });
 
-    return { proxyServer, scanInterval };
+    // Return useful handles and functions for external control/testing if needed
+    return {
+        proxyServer,
+        scanInterval,
+        initializeChromecast,
+        startDevicePolling,
+        stopDevicePolling,
+        scanForDevices,
+        clearDeviceCache,
+        buildProxyUrl,
+        playOnChromecast,
+        stopChromecast,
+        getActiveCastDevice,
+        getAllDevices,
+        // exposed for testing/debugging:
+        _internal: {
+            castClient,
+            castDevices,
+            pendingDeviceNames
+        }
+    };
 }
 
 module.exports = { initChromecastHandlers };
