@@ -1,6 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
 const fs = require('fs');
 
 // --- Import Managers ---
@@ -10,6 +9,7 @@ const { initImageHandlers } = require('./imageManager');
 const { initM3UHandlers } = require('./m3uParser');
 const { initXCHandlers } = require('./xcApiProxy');
 const { initDownloadHandlers } = require('./downloadManager');
+const { initVLCHandlers } = require('./vlcManager');
 
 // --- CRITICAL ERROR LOGGING ---
 const LOG_FILE = path.join(__dirname, 'startup_error.log');
@@ -120,42 +120,7 @@ const createWindow = () => {
   initM3UHandlers(ipcMain, mainWindow, getProfileCachePaths);
   initXCHandlers(ipcMain);
   initDownloadHandlers(ipcMain, () => mainWindow, getProfileCachePaths);
-
-  // --- External Player Launcher (VLC) ---
-  let vlcProcess = null;
-  ipcMain.handle('launch-vlc', async (event, streamUrl, customVlcPath, title) => {
-    try {
-      let vlcPath = customVlcPath;
-      if (!vlcPath) {
-          if (fs.existsSync(configManager.CONFIG_FILE)) {
-              const config = configManager.parseINI(fs.readFileSync(configManager.CONFIG_FILE, 'utf-8'));
-              vlcPath = config.vlcPath;
-          }
-      }
-
-      if (!vlcPath) {
-          vlcPath = process.platform === 'win32' ? 'C:\\Program Files\\VideoLAN\\VLC\\vlc.exe' : (process.platform === 'darwin' ? '/Applications/VLC.app/Contents/MacOS/VLC' : 'vlc');
-      }
-
-      if (vlcProcess && !vlcProcess.killed) {
-          vlcProcess.kill();
-          vlcProcess = null;
-          await new Promise(resolve => setTimeout(resolve, 500));
-      }
-
-      const args = [streamUrl, '--one-instance', '--playlist-enqueue'];
-      if (title) args.push(`--meta-title=${title}`);
-      vlcProcess = spawn(vlcPath, args, { stdio: 'ignore' });
-
-      vlcProcess.on('exit', () => {
-          vlcProcess = null;
-      });
-
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
+  initVLCHandlers(ipcMain, configManager);
 };
 
 app.on('ready', createWindow);
