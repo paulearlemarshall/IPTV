@@ -37,28 +37,29 @@ export function useXCApi({ apiDebug = false } = {}) {
     try {
       const result = await window.api.xcApi(params);
 
-      if (result.success) {
-        if (apiDebug) console.log(`[API DEBUG] ${actionMap[section]} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}:`, result.data);
-        let cats = Array.isArray(result.data) ? result.data : [];
-
-        if (section === 'vod') {
-          const enCategories = cats.filter(cat => cat.category_name?.startsWith('|EN|'));
-          if (enCategories.length > 0) {
-            const syntheticCategory = {
-              category_id: 'synthetic_en_all',
-              category_name: '|EN| All',
-              parent_id: 0
-            };
-            cats = [syntheticCategory, ...cats];
-          }
-        }
-
-        setAllCategories(prev => ({ ...prev, [section]: cats }));
-        setStatus(`Loaded ${cats.length || 0} ${section} categories.`);
-      } else {
+      if (!result.success) {
         if (apiDebug) console.error(`[API DEBUG] ${actionMap[section]} Error:`, result.error);
         setStatus(`Error: ${result.error}`);
+        return;
       }
+
+      if (apiDebug) console.log(`[API DEBUG] ${actionMap[section]} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}:`, result.data);
+      let cats = Array.isArray(result.data) ? result.data : [];
+
+      if (section === 'vod') {
+        const enCategories = cats.filter(cat => cat.category_name?.startsWith('|EN|'));
+        if (enCategories.length > 0) {
+          const syntheticCategory = {
+            category_id: 'synthetic_en_all',
+            category_name: '|EN| All',
+            parent_id: 0
+          };
+          cats = [syntheticCategory, ...cats];
+        }
+      }
+
+      setAllCategories(prev => ({ ...prev, [section]: cats }));
+      setStatus(`Loaded ${cats.length || 0} ${section} categories.`);
     } catch (e) {
       if (apiDebug) console.error(`[API DEBUG] ${actionMap[section]} Exception:`, e);
       setStatus(`Exception: ${e.message}`);
@@ -100,21 +101,21 @@ export function useXCApi({ apiDebug = false } = {}) {
         };
 
         const result = await window.api.xcApi(params);
-        if (result.success) {
-          const data = Array.isArray(result.data) ? result.data : [];
-          const favIdsSet = new Set(favorites);
-          const favStreams = data.filter(s => favIdsSet.has((s.stream_id || s.series_id || s.id)?.toString()));
+        if (!result.success) return;
 
-          setStreams(favStreams);
-          setDisplayCount(100);
-          setStatus(`Loaded ${favStreams.length} favorites. ${bypassCache ? '(FORCED REFRESH)' : ''}`);
-        }
+        const data = Array.isArray(result.data) ? result.data : [];
+        const favIdsSet = new Set(favorites);
+        const favStreams = data.filter(s => favIdsSet.has((s.stream_id || s.series_id || s.id)?.toString()));
+
+        setStreams(favStreams);
+        setDisplayCount(100);
+        setStatus(`Loaded ${favStreams.length} favorites. ${bypassCache ? '(FORCED REFRESH)' : ''}`);
       } catch (e) {
         console.error("Failed to fetch favorites", e);
       } finally {
         setIsLoading(false);
-        return;
       }
+      return;
     }
 
     // Handle synthetic "|EN| All" category
@@ -143,11 +144,11 @@ export function useXCApi({ apiDebug = false } = {}) {
           if (apiDebug) console.log(`[API DEBUG] Fetching streams from ${cat.category_name}...`);
 
           const result = await window.api.xcApi(params);
-          if (result.success) {
-            const streamsList = Array.isArray(result.data) ? result.data : [];
-            if (apiDebug) console.log(`[API DEBUG] Got ${streamsList.length} streams from ${cat.category_name}`);
-            allStreamsData = [...allStreamsData, ...streamsList];
-          }
+          if (!result.success) continue;
+
+          const streamsList = Array.isArray(result.data) ? result.data : [];
+          if (apiDebug) console.log(`[API DEBUG] Got ${streamsList.length} streams from ${cat.category_name}`);
+          allStreamsData = [...allStreamsData, ...streamsList];
         }
 
         const t1 = performance.now();
@@ -202,13 +203,12 @@ export function useXCApi({ apiDebug = false } = {}) {
         }, 0);
 
         setIsLoading(false);
-        return;
       } catch (e) {
         if (apiDebug) console.error(`[API DEBUG] Aggregated fetch Exception:`, e);
         setStatus(`Exception: ${e.message}`);
         setIsLoading(false);
-        return;
       }
+      return;
     }
 
     // Normal category fetch
@@ -233,55 +233,56 @@ export function useXCApi({ apiDebug = false } = {}) {
       const result = await window.api.xcApi(params);
       const t1 = performance.now();
 
-      if (result.success) {
-        if (apiDebug) console.log(`[API DEBUG] ${actionMap[section]} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}: ${result.data?.length || 0} items (${(t1 - t0).toFixed(1)}ms)`, result.data);
-        const data = Array.isArray(result.data) ? result.data : [];
-
-        const urls = data.map(s => s.stream_icon || s.cover || s.info?.movie_image).filter(u => !!u);
-        let cacheResults = {};
-        if (urls.length > 0 && setImageCacheMap) {
-          const t2 = performance.now();
-          if (apiDebug) console.log(`[IMG CACHE] Batch checking ${urls.length} images...`);
-          try {
-            cacheResults = await window.api.checkImageCacheBatch({ urls, profileId: profile.id });
-            const t3 = performance.now();
-            const hitCount = Object.keys(cacheResults).length;
-            if (apiDebug) console.log(`[IMG CACHE] Batch check complete: ${hitCount}/${urls.length} cached (${(t3 - t2).toFixed(1)}ms)`);
-          } catch (e) {
-            console.error("Batch cache check failed", e);
-          }
-        }
-
-        const t4 = performance.now();
-        if (apiDebug) console.log(`[RENDER] Setting state... (${(t4 - t0).toFixed(1)}ms)`);
-
-        setIsRendering(true);
-
-        setTimeout(() => {
-          const t5 = performance.now();
-          if (apiDebug) console.log(`[RENDER] Applying state update (${(t5 - t0).toFixed(1)}ms)`);
-
-          if (setImageCacheMap) setImageCacheMap(prev => ({ ...prev, ...cacheResults }));
-          setStreams(data);
-          setDisplayCount(100);
-
-          requestAnimationFrame(() => {
-            const t6 = performance.now();
-            if (apiDebug) console.log(`[RENDER] Initial 100 tiles rendered (${(t6 - t0).toFixed(1)}ms)`);
-            setIsRendering(false);
-
-            if (data.length > 100) {
-              const remaining = data.length - 100;
-              if (apiDebug) console.log(`[RENDER] Scheduling ${remaining} more tiles to load progressively...`);
-            }
-          });
-
-          setStatus(`Loaded ${data.length || 0} streams. ${bypassCache ? '(FORCED REFRESH)' : ''}`);
-        }, 0);
-      } else {
+      if (!result.success) {
         if (apiDebug) console.error(`[API DEBUG] ${actionMap[section]} Error:`, result.error);
         setStatus(`Error: ${result.error}`);
+        return;
       }
+
+      if (apiDebug) console.log(`[API DEBUG] ${actionMap[section]} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}: ${result.data?.length || 0} items (${(t1 - t0).toFixed(1)}ms)`, result.data);
+      const data = Array.isArray(result.data) ? result.data : [];
+
+      const urls = data.map(s => s.stream_icon || s.cover || s.info?.movie_image).filter(u => !!u);
+      let cacheResults = {};
+      if (urls.length > 0 && setImageCacheMap) {
+        const t2 = performance.now();
+        if (apiDebug) console.log(`[IMG CACHE] Batch checking ${urls.length} images...`);
+        try {
+          cacheResults = await window.api.checkImageCacheBatch({ urls, profileId: profile.id });
+          const t3 = performance.now();
+          const hitCount = Object.keys(cacheResults).length;
+          if (apiDebug) console.log(`[IMG CACHE] Batch check complete: ${hitCount}/${urls.length} cached (${(t3 - t2).toFixed(1)}ms)`);
+        } catch (e) {
+          console.error("Batch cache check failed", e);
+        }
+      }
+
+      const t4 = performance.now();
+      if (apiDebug) console.log(`[RENDER] Setting state... (${(t4 - t0).toFixed(1)}ms)`);
+
+      setIsRendering(true);
+
+      setTimeout(() => {
+        const t5 = performance.now();
+        if (apiDebug) console.log(`[RENDER] Applying state update (${(t5 - t0).toFixed(1)}ms)`);
+
+        if (setImageCacheMap) setImageCacheMap(prev => ({ ...prev, ...cacheResults }));
+        setStreams(data);
+        setDisplayCount(100);
+
+        requestAnimationFrame(() => {
+          const t6 = performance.now();
+          if (apiDebug) console.log(`[RENDER] Initial 100 tiles rendered (${(t6 - t0).toFixed(1)}ms)`);
+          setIsRendering(false);
+
+          if (data.length > 100) {
+            const remaining = data.length - 100;
+            if (apiDebug) console.log(`[RENDER] Scheduling ${remaining} more tiles to load progressively...`);
+          }
+        });
+
+        setStatus(`Loaded ${data.length || 0} streams. ${bypassCache ? '(FORCED REFRESH)' : ''}`);
+      }, 0);
     } catch (e) {
       if (apiDebug) console.error(`[API DEBUG] ${actionMap[section]} Exception:`, e);
       setStatus(`Exception: ${e.message}`);
@@ -308,37 +309,38 @@ export function useXCApi({ apiDebug = false } = {}) {
     try {
       const result = await window.api.xcApi(params);
 
-      if (result.success) {
-        if (apiDebug) console.log(`[API DEBUG] get_series_info Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}:`, result.data);
-
-        const allEpisodes = [];
-        Object.values(result.data.episodes || {}).forEach(season => {
-          allEpisodes.push(...season);
-        });
-
-        const urls = allEpisodes.map(ep => ep.info?.movie_image).filter(u => !!u);
-        if (result.data.info?.cover) urls.push(result.data.info.cover);
-
-        let cacheResults = {};
-        if (urls.length > 0 && setImageCacheMap) {
-          try {
-            cacheResults = await window.api.checkImageCacheBatch({ urls, profileId: profile.id });
-          } catch (e) {
-            console.error("Batch cache check failed", e);
-          }
-        }
-
-        if (setImageCacheMap) setImageCacheMap(prev => ({ ...prev, ...cacheResults }));
-        setSeriesInfo(result.data);
-        setViewMode('details');
-
-        const seasonKeys = Object.keys(result.data.episodes || {}).sort((a, b) => parseInt(a) - parseInt(b));
-        if (seasonKeys.length > 0) setActiveSeason(seasonKeys[0]);
-        setStatus(`Loaded series: ${result.data.info?.name}`);
-      } else {
+      if (!result.success) {
         if (apiDebug) console.error(`[API DEBUG] get_series_info Error:`, result.error);
         setStatus(`Error: ${result.error}`);
+        return;
       }
+
+      if (apiDebug) console.log(`[API DEBUG] get_series_info Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}:`, result.data);
+
+      const allEpisodes = [];
+      Object.values(result.data.episodes || {}).forEach(season => {
+        allEpisodes.push(...season);
+      });
+
+      const urls = allEpisodes.map(ep => ep.info?.movie_image).filter(u => !!u);
+      if (result.data.info?.cover) urls.push(result.data.info.cover);
+
+      let cacheResults = {};
+      if (urls.length > 0 && setImageCacheMap) {
+        try {
+          cacheResults = await window.api.checkImageCacheBatch({ urls, profileId: profile.id });
+        } catch (e) {
+          console.error("Batch cache check failed", e);
+        }
+      }
+
+      if (setImageCacheMap) setImageCacheMap(prev => ({ ...prev, ...cacheResults }));
+      setSeriesInfo(result.data);
+      setViewMode('details');
+
+      const seasonKeys = Object.keys(result.data.episodes || {}).sort((a, b) => parseInt(a) - parseInt(b));
+      if (seasonKeys.length > 0) setActiveSeason(seasonKeys[0]);
+      setStatus(`Loaded series: ${result.data.info?.name}`);
     } catch (e) {
       if (apiDebug) console.error(`[API DEBUG] get_series_info Exception:`, e);
       setStatus(`Exception: ${e.message}`);
@@ -362,14 +364,15 @@ export function useXCApi({ apiDebug = false } = {}) {
 
     try {
       const result = await window.api.xcApi(params);
-      if (result.success) {
-        if (apiDebug) console.log(`[API DEBUG] Account Info Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}:`, result.data);
-        setAccountInfo(result.data);
-        setStatus('Account info loaded.');
-      } else {
+      if (!result.success) {
         if (apiDebug) console.error(`[API DEBUG] Account Info Error:`, result.error);
         setStatus(`Error: ${result.error}`);
+        return;
       }
+
+      if (apiDebug) console.log(`[API DEBUG] Account Info Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}:`, result.data);
+      setAccountInfo(result.data);
+      setStatus('Account info loaded.');
     } catch (e) {
       if (apiDebug) console.error(`[API DEBUG] Account Info Exception:`, e);
       setStatus(`Exception: ${e.message}`);
@@ -402,9 +405,13 @@ export function useXCApi({ apiDebug = false } = {}) {
       const result = await window.api.xcApi(params);
       const t1 = performance.now();
 
-      if (result.success) {
-        if (apiDebug) console.log(`[METADATA] ${action} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'} for ID ${id} (${(t1 - t0).toFixed(1)}ms)`);
-        const metadata = result.data.info || result.data;
+      if (!result.success) {
+        if (apiDebug) console.error(`[METADATA] ${action} Error for ID ${id}:`, result.error);
+        return null;
+      }
+
+      if (apiDebug) console.log(`[METADATA] ${action} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'} for ID ${id} (${(t1 - t0).toFixed(1)}ms)`);
+      const metadata = result.data.info || result.data;
         
         // Background cache check for images in metadata (backdrops, etc)
         const backdropUrl = Array.isArray(metadata.backdrop_path) ? metadata.backdrop_path[0] : metadata.backdrop_path;
