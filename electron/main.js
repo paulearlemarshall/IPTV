@@ -6,7 +6,6 @@ const fs = require('fs');
 const { initConfigHandlers } = require('./configManager');
 const { initChromecastHandlers } = require('./chromecastManager');
 const { initImageHandlers } = require('./imageManager');
-const { initM3UHandlers } = require('./m3uParser');
 const { initXCHandlers } = require('./xcApiProxy');
 const { initDownloadHandlers } = require('./downloadManager');
 const { initVLCHandlers } = require('./vlcManager');
@@ -117,7 +116,6 @@ const createWindow = () => {
   const configManager = initConfigHandlers(ipcMain, dialog, mainWindow, USER_DATA_PATH, TRENDY_ID);
   initChromecastHandlers(ipcMain, mainWindow);
   initImageHandlers(ipcMain, getProfileCachePaths);
-  initM3UHandlers(ipcMain, mainWindow, getProfileCachePaths);
   initXCHandlers(ipcMain);
   initDownloadHandlers(ipcMain, () => mainWindow, getProfileCachePaths);
   initVLCHandlers(ipcMain, configManager);
