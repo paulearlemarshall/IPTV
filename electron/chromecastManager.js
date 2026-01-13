@@ -19,6 +19,19 @@ function getLocalIP() {
     return '127.0.0.1';
 }
 
+function getLocalIPs() {
+    const interfaces = os.networkInterfaces();
+    const ips = [];
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                ips.push(iface.address);
+            }
+        }
+    }
+    return ips.length > 0 ? ips : ['127.0.0.1'];
+}
+
 function initChromecastHandlers(ipcMain, mainWindow) {
     const PROXY_PORT = 5181;
     const castClient = new ChromecastAPI();
@@ -309,8 +322,42 @@ function initChromecastHandlers(ipcMain, mainWindow) {
         return scanForDevices();
     });
 
-    ipcMain.handle('cast-play', async (event, deviceName, streamUrl, metadata = {}) => {
-        return playOnChromecast(deviceName, streamUrl, metadata);
+    ipcMain.handle('get-available-ips', async () => {
+        return getLocalIPs();
+    });
+
+    ipcMain.handle('cast-play', async (event, deviceName, streamUrl, metadata = {}, proxyIp = null) => {
+        const device = castDevices[deviceName];
+        if (!device) {
+            const msg = `Device "${deviceName}" not found`;
+            console.error(`[Cast] Playback failed: ${msg}`);
+            return { success: false, error: msg };
+        }
+        activeCastDeviceName = deviceName;
+        
+        const ip = proxyIp || getLocalIP();
+        const proxyUrl = `http://${ip}:${PROXY_PORT}/stream?url=${encodeURIComponent(streamUrl)}`;
+
+        console.log(`[Cast] Sending stream to ${deviceName}...`);
+        console.log(`[Cast] Original URL: ${streamUrl}`);
+        console.log(`[Cast] Proxy URL (via ${ip}): ${proxyUrl}`);
+
+        const options = {
+            title: metadata.title || 'IPTV Stream',
+            images: metadata.images || []
+        };
+
+        return new Promise((resolve) => {
+            device.play(proxyUrl, options, (err) => {
+                if (err) {
+                    console.error(`[Cast] Playback Error on ${deviceName}:`, err && err.message);
+                    resolve({ success: false, error: err && err.message });
+                } else {
+                    console.log(`[Cast] Playback started successfully on ${deviceName}`);
+                    resolve({ success: true });
+                }
+            });
+        });
     });
 
     ipcMain.handle('cast-stop', async (event, deviceName) => {

@@ -33,6 +33,8 @@ function App() {
 
   const [castDevices, setCastDevices] = useState(['None']);
   const [selectedCastDevice, setSelectedCastDevice] = useState('None');
+  const [availableIps, setAvailableIps] = useState([]);
+  const [selectedProxyIp, setSelectedProxyIp] = useState('');
   const [expandedGroups, setExpandedGroups] = useState({});
   const [tileSize, setTileSize] = useState(200);
   const [contextMenu, setContextMenu] = useState(null);
@@ -178,7 +180,7 @@ function App() {
         window.api.castPlay(device, finalUrl, {
             title: stream.name || stream.title,
             images: [{ url: getXcLogoUrl(stream, selectedServer) }]
-        });
+        }, selectedProxyIp);
     } else {
         window.api.launchVLC(finalUrl, null, stream.name || stream.title);
     }
@@ -210,6 +212,12 @@ function App() {
                 });
             });
             window.api.castScan();
+        }
+
+        if (window.api.getAvailableIps) {
+            const ips = await window.api.getAvailableIps();
+            setAvailableIps(ips);
+            if (ips.length > 0) setSelectedProxyIp(ips[0]);
         }
     };
     init();
@@ -379,6 +387,9 @@ function App() {
         castDevices={castDevices}
         selectedCastDevice={selectedCastDevice}
         setSelectedCastDevice={setSelectedCastDevice}
+        availableIps={availableIps}
+        selectedProxyIp={selectedProxyIp}
+        setSelectedProxyIp={setSelectedProxyIp}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         englishOnly={englishOnly}

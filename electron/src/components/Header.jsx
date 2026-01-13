@@ -33,6 +33,9 @@ const Header = ({
   castDevices,
   selectedCastDevice,
   setSelectedCastDevice,
+  availableIps,
+  selectedProxyIp,
+  setSelectedProxyIp,
   searchQuery,
   setSearchQuery,
   englishOnly,
@@ -200,9 +203,19 @@ const Header = ({
                 <span onClick={m === 'vlc' ? handleVlcPathChange : undefined} style={{ cursor: m === 'vlc' ? 'pointer' : 'inherit' }}>{m.toUpperCase()}</span>
               </label>
               {m === 'cast' && playerMode === 'cast' && (
-                <select value={selectedCastDevice} onChange={(e) => setSelectedCastDevice(e.target.value)} style={{ padding: '1px 4px', fontSize: '0.65rem', width: '100px', marginLeft: '2px', height: '20px' }}>
-                  {castDevices.map(name => <option key={name} value={name}>{name}</option>)}
-                </select>
+                <div style={{ display: 'flex', gap: '2px' }}>
+                  <select value={selectedCastDevice} onChange={(e) => setSelectedCastDevice(e.target.value)} style={{ padding: '1px 4px', fontSize: '0.65rem', width: '100px', marginLeft: '2px', height: '20px' }}>
+                    {castDevices.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                  <select 
+                    value={selectedProxyIp} 
+                    onChange={(e) => setSelectedProxyIp(e.target.value)} 
+                    style={{ padding: '1px 4px', fontSize: '0.65rem', width: '110px', height: '20px' }}
+                    title="Select the local IP for the Chromecast proxy"
+                  >
+                    {availableIps.map(ip => <option key={ip} value={ip}>{ip}</option>)}
+                  </select>
+                </div>
               )}
             </React.Fragment>
           ))}
