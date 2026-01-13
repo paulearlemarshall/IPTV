@@ -203,10 +203,27 @@ const Header = ({
                 <span onClick={m === 'vlc' ? handleVlcPathChange : undefined} style={{ cursor: m === 'vlc' ? 'pointer' : 'inherit' }}>{m.toUpperCase()}</span>
               </label>
               {m === 'cast' && playerMode === 'cast' && (
-                <div style={{ display: 'flex', gap: '2px' }}>
+                <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
                   <select value={selectedCastDevice} onChange={(e) => setSelectedCastDevice(e.target.value)} style={{ padding: '1px 4px', fontSize: '0.65rem', width: '100px', marginLeft: '2px', height: '20px' }}>
                     {castDevices.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
+                  <button 
+                    className="btn" 
+                    onClick={() => window.api.castStop(selectedCastDevice)}
+                    style={{ 
+                        padding: '0 4px', 
+                        height: '20px', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        background: 'rgba(255, 107, 107, 0.1)',
+                        border: '1px solid #ff6b6b',
+                        color: '#ff6b6b'
+                    }}
+                    title="Stop Casting"
+                  >
+                    <X size={12} strokeWidth={3} />
+                  </button>
                   <select 
                     value={selectedProxyIp} 
                     onChange={(e) => setSelectedProxyIp(e.target.value)} 
