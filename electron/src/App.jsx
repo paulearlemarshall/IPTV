@@ -184,7 +184,7 @@ function App() {
     } else {
         window.api.launchVLC(finalUrl, null, stream.name || stream.title);
     }
-  }, [playerMode, selectedCastDevice, selectedSection, currentProfile, selectedServer, fetchSeriesInfo]);
+  }, [playerMode, selectedCastDevice, selectedSection, currentProfile, selectedServer, fetchSeriesInfo, selectedProxyIp]);
 
   // --- Effects ---
 
