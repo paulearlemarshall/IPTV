@@ -5,167 +5,14 @@ import CachedImage from './components/CachedImage';
 import ProfileManager from './components/ProfileManager';
 import FlipBookView from './components/FlipBookView';
 import StarRating from './components/StarRating';
+import StreamCard from './components/StreamCard';
 import { useXCApi } from './hooks/useXCApi';
 import { useIntersectionObserver } from './hooks/useIntersectionObserver';
+import { useDownloadManager } from './hooks/useDownloadManager';
+import { useFavorites } from './hooks/useFavorites';
+import { useFilteredStreams } from './hooks/useFilteredStreams';
+import { useGroupedCategories } from './hooks/useGroupedCategories';
 import { getXcUrl, getXcLogoUrl } from './utils/xc';
-
-const StreamCard = React.memo(({ stream, showPlot, onDoubleClick, onContextMenu, profileId, cacheMap, apiDebug, fetchMetadata, metadataCache, sectionType, onDownload, isFavorite, onToggleFavorite }) => {
-  const [metadata, setMetadata] = useState(null);
-  const cardRef = useRef(null);
-  const [isVisible] = useIntersectionObserver(cardRef, { rootMargin: '200px' });
-
-  useEffect(() => {
-    if (showPlot && isVisible && !metadata && (sectionType === 'vod' || sectionType === 'series')) {
-      const id = stream.stream_id || stream.series_id;
-      const cacheKey = `${sectionType}_${id}`;
-
-      if (metadataCache[cacheKey]) {
-        setMetadata(metadataCache[cacheKey]);
-      } else {
-        fetchMetadata(stream).then(data => {
-          if (data) setMetadata(data);
-        });
-      }
-    }
-  }, [showPlot, isVisible, stream, fetchMetadata, metadata, metadataCache, sectionType]);
-
-  const logo = stream.stream_icon || stream.cover;
-  const name = stream.name || stream.title;
-  const plot = metadata?.plot || metadata?.description || '';
-  const year = metadata?.releasedate?.split('-')[0] || metadata?.release_date?.split('-')[0] || '';
-  const rating = parseFloat(metadata?.rating || 0);
-  const duration = metadata?.duration_secs ? `${Math.floor(metadata.duration_secs / 60)}m` : (metadata?.duration || '');
-  const cast = metadata?.cast || '';
-  const director = metadata?.director || '';
-
-  return (
-    <div
-      ref={cardRef}
-      className="stream-card"
-      onDoubleClick={onDoubleClick}
-      onContextMenu={onContextMenu}
-      style={{
-        height: showPlot && (sectionType === 'vod' || sectionType === 'series') ? '480px' : undefined,
-        minHeight: showPlot && (sectionType === 'vod' || sectionType === 'series') ? '420px' : undefined,
-        maxHeight: showPlot && (sectionType === 'vod' || sectionType === 'series') ? '550px' : undefined
-      }}
-    >
-      <CachedImage
-        src={logo}
-        alt={name}
-        className="stream-logo"
-        profileId={profileId}
-        cacheMap={cacheMap}
-        apiDebug={apiDebug}
-      />
-      <div className="stream-name" style={{ fontWeight: 'bold' }}>{name}</div>
-      
-      {sectionType !== 'episode' && (
-        <button
-          className="favorite-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onToggleFavorite) onToggleFavorite(stream);
-          }}
-          style={{
-            position: 'absolute',
-            top: '5px',
-            right: '5px',
-            background: 'rgba(0, 0, 0, 0.5)',
-            border: 'none',
-            borderRadius: '50%',
-            width: '24px',
-            height: '24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            zIndex: 11,
-            transition: 'transform 0.2s'
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.2)'}
-          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-        >
-          <Star size={14} fill={isFavorite ? "#ffd43b" : "none"} color={isFavorite ? "#ffd43b" : "#909296"} />
-        </button>
-      )}
-
-      {(sectionType === 'vod' || sectionType === 'series') && (
-        <button
-          className="download-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onDownload) onDownload(stream);
-          }}
-          style={{
-            position: 'absolute',
-            bottom: '-1px',
-            right: '-1px',
-            background: 'rgba(0, 0, 0, 0.7)',
-            border: '1px solid var(--section-accent)',
-            borderRight: 'none',
-            borderBottom: 'none',
-            borderRadius: '4px 0 4px 0',
-            padding: '3px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background 0.2s, transform 0.2s',
-            zIndex: 10
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--section-accent)';
-            e.currentTarget.style.transform = 'scale(1.1)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'rgba(0, 0, 0, 0.7)';
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
-          title="Download"
-        >
-          <Download size={8} color="white" />
-        </button>
-      )}
-      {showPlot && (sectionType === 'vod' || sectionType === 'series') && (
-        <div className="stream-plot">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-            <StarRating rating={rating} />
-            {duration && <span style={{ fontSize: '0.7rem', color: '#888' }}>{duration}</span>}
-          </div>
-          
-          <div style={{ fontSize: '0.75rem', color: '#ffd43b', marginBottom: '4px' }}>
-            {year && <span>{year}</span>}
-            {director && <span style={{ marginLeft: '8px', color: '#aaa' }}>Dir: {director}</span>}
-          </div>
-
-          {cast && (
-            <div style={{ fontSize: '0.65rem', color: '#909296', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              <strong>Cast:</strong> {cast}
-            </div>
-          )}
-
-          {plot ? (
-            <div style={{
-              fontSize: '0.7rem',
-              color: '#c1c2c5',
-              lineHeight: '1.3',
-              flex: '1 1 0',
-              minHeight: 0,
-              overflow: 'auto'
-            }}>
-              {plot}
-            </div>
-          ) : (
-            <div style={{ fontSize: '0.7rem', color: '#555', fontStyle: 'italic' }}>
-              {metadata === null ? 'Loading...' : 'No description available'}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-});
 
 function App() {
   const [currentProfile, setCurrentProfile] = useState(null);
@@ -190,9 +37,7 @@ function App() {
   const [showPlot, setShowPlot] = useState(false);
   const [yearFilter, setYearFilter] = useState('none');
   const [sortByYear, setSortByYear] = useState(false);
-  const [downloads, setDownloads] = useState([]);
   const [showDownloadManager, setShowDownloadManager] = useState(false);
-  const [favorites, setFavorites] = useState([]);
   const [lastCategoryClick, setLastCategoryClick] = useState({ id: null, timestamp: 0 });
   const [flipBookMode, setFlipBookMode] = useState(false);
   const [flipBookIndex, setFlipBookIndex] = useState(0);
@@ -224,12 +69,43 @@ function App() {
     clearAccountInfo
   } = xcApi;
 
-  // Sync favorites when profile changes
-  useEffect(() => {
-    if (currentProfile) {
-      setFavorites(currentProfile.favorites || []);
-    }
-  }, [currentProfile?.id]);
+  // Use Favorites hook
+  const {
+    favorites,
+    toggleFavorite
+  } = useFavorites({ currentProfile });
+
+  // Use Download Manager hook
+  const {
+    downloads,
+    startDownload: handleDownload,
+    cancelDownload,
+    removeDownload,
+    moveDownload
+  } = useDownloadManager({
+    currentProfile,
+    selectedSection,
+    selectedServer,
+    setShowDownloadManager
+  });
+
+  // Use Filtered Streams hook
+  const { visibleStreams, totalFilteredCount } = useFilteredStreams({
+    streams,
+    searchQuery,
+    englishOnly,
+    yearFilter,
+    sortByYear,
+    displayCount
+  });
+
+  // Use Grouped Categories hook
+  const groupedCategories = useGroupedCategories({
+    allCategories,
+    selectedSection,
+    searchQuery,
+    englishOnly
+  });
 
   // Wrapper functions that pass current context
   const fetchCategories = useCallback((section = selectedSection, bypassCache = false) => {
@@ -285,7 +161,7 @@ function App() {
         fetchSeriesInfo(stream.series_id);
         return;
     }
-    const finalUrl = getXcUrl(stream, type);
+    const finalUrl = getXcUrl(stream, type, currentProfile, selectedServer);
     if (!finalUrl) return;
     
     if (playerMode === 'internal') {
@@ -298,140 +174,12 @@ function App() {
         }
         window.api.castPlay(device, finalUrl, {
             title: stream.name || stream.title,
-            images: [{ url: getXcLogoUrl(stream) }]
+            images: [{ url: getXcLogoUrl(stream, selectedServer) }]
         });
     } else {
         window.api.launchVLC(finalUrl, null, stream.name || stream.title);
     }
   }, [playerMode, selectedCastDevice, selectedSection, currentProfile, selectedServer, fetchSeriesInfo]);
-
-  const toggleFavorite = useCallback(async (stream) => {
-    const id = (stream.stream_id || stream.series_id || stream.id || "").toString();
-    if (!id) return;
-
-    setFavorites(prev => {
-      const isFav = prev.includes(id);
-      const next = isFav ? prev.filter(favId => favId !== id) : [...prev, id];
-      
-      (async () => {
-        if (currentProfile) {
-          try {
-            const config = await window.api.config.load();
-            const profileIndex = config.profiles.findIndex(p => p.id === currentProfile.id);
-            if (profileIndex !== -1) {
-                config.profiles[profileIndex].favorites = next;
-                await window.api.config.save(config);
-            }
-          } catch (e) {
-            console.error("Failed to persist favorites", e);
-          }
-        }
-      })();
-      
-      return next;
-    });
-  }, [currentProfile?.id]);
-
-  // Download handler
-  const handleDownload = useCallback(async (stream) => {
-    const streamUrl = getXcUrl(stream);
-    const streamName = stream.name || stream.title || 'Unknown';
-
-    const downloadId = `dl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    const newDownload = {
-      id: downloadId,
-      name: streamName,
-      url: streamUrl,
-      progress: 0,
-      speed: '0 KB/s',
-      status: 'queued',
-      error: null
-    };
-
-    setDownloads(prev => [...prev, newDownload]);
-    setShowDownloadManager(true);
-
-    if (window.api && window.api.startDownload) {
-      try {
-        await window.api.startDownload({
-          id: downloadId,
-          url: streamUrl,
-          name: streamName,
-          profileId: currentProfile?.id
-        });
-      } catch (err) {
-        console.error('Download failed:', err);
-        setDownloads(prev => prev.map(d =>
-          d.id === downloadId
-            ? { ...d, status: 'error', error: err.message }
-            : d
-        ));
-      }
-    }
-  }, [currentProfile?.id, selectedSection, selectedServer]);
-
-  const cancelDownload = async (downloadId) => {
-    if (window.api && window.api.cancelDownload) {
-      await window.api.cancelDownload({ id: downloadId });
-    }
-    setDownloads(prev => prev.map(d =>
-      d.id === downloadId ? { ...d, status: 'cancelled' } : d
-    ));
-  };
-
-  const removeDownload = async (downloadId) => {
-    const dl = downloads.find(d => d.id === downloadId);
-    
-    if (dl && dl.status !== 'completed' && dl.status !== 'cancelled') {
-      if (window.api && window.api.cancelDownload) {
-        await window.api.cancelDownload({ id: downloadId });
-      }
-    }
-    
-    setDownloads(prev => prev.filter(d => d.id !== downloadId));
-  };
-
-  const moveDownload = (downloadId, direction) => {
-    setDownloads(prev => {
-      const index = prev.findIndex(d => d.id === downloadId);
-      if (index === -1) return prev;
-
-      const newIndex = direction === 'up' ? index - 1 : index + 1;
-      if (newIndex < 0 || newIndex >= prev.length) return prev;
-
-      const newDownloads = [...prev];
-      [newDownloads[index], newDownloads[newIndex]] = [newDownloads[newIndex], newDownloads[index]];
-      return newDownloads;
-    });
-  };
-
-  // Listen for download progress updates
-  useEffect(() => {
-    if (!window.api || !window.api.onDownloadProgress) return;
-
-    const handleProgress = (data) => {
-      setDownloads(prev => prev.map(d =>
-        d.id === data.id
-          ? { ...d, progress: data.progress, speed: data.speed, status: data.status, error: data.error }
-          : d
-      ));
-
-      if (data.status === 'cancelled') {
-        setTimeout(() => {
-          setDownloads(prev => prev.filter(d => d.id !== data.id));
-        }, 2000);
-      }
-    };
-
-    window.api.onDownloadProgress(handleProgress);
-
-    return () => {
-      if (window.api.removeDownloadProgressListeners) {
-        window.api.removeDownloadProgressListeners();
-      }
-    };
-  }, []);
 
   // --- Effects ---
 
@@ -441,7 +189,6 @@ function App() {
         if (config.profiles?.length > 0) {
             const active = config.profiles.find(p => p.id === config.activeProfileId) || config.profiles[0];
             setCurrentProfile(active);
-            setFavorites(active.favorites || []);
             if (active.servers?.length > 0) setSelectedServer(active.servers[0]);
         } else {
             setShowProfiles(true);
@@ -495,32 +242,6 @@ function App() {
       return () => clearTimeout(timer);
     }
   }, [streams.length, displayCount, isRendering, apiDebug, setDisplayCount]);
-
-  // --- Helpers ---
-
-  const getXcUrl = useCallback((stream, type = selectedSection) => {
-    if (!stream || !currentProfile || !selectedServer) return null;
-    const base = selectedServer.replace(/\/$/, "");
-    const { username, password } = currentProfile;
-    const id = stream.stream_id || stream.id;
-
-    if (type === 'live') {
-        return `${base}/${username}/${password}/${id}.ts`;
-    } else if (type === 'vod' || type === 'episode') {
-        const ext = stream.container_extension || 'mp4';
-        const path = type === 'episode' ? 'series' : 'movie';
-        return `${base}/${path}/${username}/${password}/${id}.${ext}`;
-    }
-    return null;
-  }, [currentProfile, selectedServer, selectedSection]);
-
-  const getXcLogoUrl = useCallback((stream) => {
-    const rawLogo = stream.stream_icon || stream.cover;
-    if (!rawLogo || !selectedServer) return rawLogo;
-    if (rawLogo.startsWith('http')) return rawLogo;
-    const base = selectedServer.replace(/\/$/, "");
-    return `${base}${rawLogo.startsWith('/') ? '' : '/'}${rawLogo}`;
-  }, [selectedServer]);
 
   const handleCategoryClick = (catId) => {
     const now = Date.now();
@@ -613,101 +334,6 @@ function App() {
     if (selectedSection === 'series') return '#ff6b6b';
     return '#00d4ff'; 
   };
-
-  // --- Logic ---
-
-  const groupedCategories = useMemo(() => {
-    const currentCats = allCategories[selectedSection] || [];
-    const allowed = ["EN", "UK", "US", "GB", "CA", "MULTI", "NETFLIX", "APPLE+", "DISNEY+", "4K", "18", "24/7", "CHRISTMAS", "FORMULA", "FOR", "WORLDCUP", "BEIN", "WC", "NZ", "AU"];
-
-    const filtered = currentCats.filter(c => {
-        const nameUpper = (c.category_name || "").toUpperCase();
-        if (searchQuery && !nameUpper.includes(searchQuery.toUpperCase())) return false;
-        if (englishOnly) {
-            const cleanName = nameUpper.replace(/^[|\s]+/, "");
-            return allowed.some(word => cleanName.startsWith(word.toUpperCase() + "|") || cleanName.startsWith(word.toUpperCase() + " ") || cleanName === word.toUpperCase());
-        }
-        return true;
-    });
-
-    const groups = {};
-    
-    groups[" Favorites"] = [{
-        category_id: 'favorites',
-        category_name: '★ Favorites',
-        parent_id: 0
-    }];
-
-    filtered.forEach(cat => {
-        const name = cat.category_name || "";
-        let prefix = "General";
-        if (name.includes('|')) {
-            const parts = name.split('|').map(p => p.trim()).filter(p => p.length > 0);
-            if (parts.length > 0) prefix = parts[0];
-        } else {
-            const firstWord = name.split(' ')[0];
-            if (firstWord) prefix = firstWord;
-        }
-        if (!groups[prefix]) groups[prefix] = [];
-        groups[prefix].push(cat);
-    });
-    return groups;
-  }, [allCategories, selectedSection, searchQuery, englishOnly]);
-
-  const { visibleStreams, totalFilteredCount } = useMemo(() => {
-    let filtered = streams;
-    const lowerQuery = searchQuery.toLowerCase();
-
-    if (searchQuery) {
-        filtered = filtered.filter(s =>
-            (s.name || s.title || "").toLowerCase().includes(lowerQuery)
-        );
-    }
-
-    if (englishOnly) {
-        const forbidden = ["SWEDEN", "NORWAY", "DENMARK", "FINLAND", "DEUTSCH", "FRENCH", "ITALIAN", "SPANISH"];
-        filtered = filtered.filter(s => !forbidden.some(word => (s.name || s.title)?.toUpperCase().includes(word)));
-    }
-
-    if (yearFilter !== 'none') {
-        filtered = filtered.filter(s => {
-            const title = s.name || s.title || "";
-            return title.includes(`(${yearFilter})`);
-        });
-    }
-
-    if (sortByYear) {
-        const extractYear = (stream) => {
-            const title = stream.name || stream.title || "";
-            const yearMatch = title.match(/\((\d{4})\)/);
-            return yearMatch ? parseInt(yearMatch[1]) : null;
-        };
-
-        const withYears = filtered.filter(s => extractYear(s) !== null);
-        const withoutYears = filtered.filter(s => extractYear(s) === null);
-
-        withYears.sort((a, b) => {
-            const yearA = extractYear(a);
-            const yearB = extractYear(b);
-            return yearB - yearA;
-        });
-
-        withoutYears.sort((a, b) => {
-            const nameA = (a.name || a.title || "").toLowerCase();
-            const nameB = (b.name || b.title || "").toLowerCase();
-            return nameA.localeCompare(nameB);
-        });
-
-        filtered = [...withYears, ...withoutYears];
-    }
-
-    const totalCount = filtered.length;
-
-    return {
-      visibleStreams: filtered.slice(0, displayCount),
-      totalFilteredCount: totalCount
-    };
-  }, [streams, englishOnly, searchQuery, yearFilter, sortByYear, displayCount]);
 
   return (
     <div className="container" onClick={handleCloseContextMenu} style={{ '--section-accent': getSectionColor() }}>
