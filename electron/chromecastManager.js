@@ -252,11 +252,12 @@ function initChromecastHandlers(ipcMain, mainWindow) {
         pendingDeviceNames.clear();
     }
 
-    function buildProxyUrl(streamUrl) {
-        return `http://${getLocalIP()}:${PROXY_PORT}/stream?url=${encodeURIComponent(streamUrl)}`;
+    function buildProxyUrl(streamUrl, proxyIp = null) {
+        const ip = proxyIp || getLocalIP();
+        return `http://${ip}:${PROXY_PORT}/stream?url=${encodeURIComponent(streamUrl)}`;
     }
 
-    function playOnChromecast(deviceName, streamUrl, metadata = {}) {
+    function playOnChromecast(deviceName, streamUrl, metadata = {}, proxyIp = null) {
         const device = castDevices[deviceName];
         if (!device) {
             const msg = `Device "${deviceName}" not found`;
@@ -264,11 +265,11 @@ function initChromecastHandlers(ipcMain, mainWindow) {
             return Promise.resolve({ success: false, error: msg });
         }
         activeCastDeviceName = deviceName;
-        const proxyUrl = buildProxyUrl(streamUrl);
+        const proxyUrl = buildProxyUrl(streamUrl, proxyIp);
 
         console.log(`[Cast] Sending stream to ${deviceName}...`);
         console.log(`[Cast] Original URL: ${streamUrl}`);
-        console.log(`[Cast] Proxy URL: ${proxyUrl}`);
+        console.log(`[Cast] Proxy URL (via ${proxyIp || getLocalIP()}): ${proxyUrl}`);
 
         const options = {
             title: metadata.title || 'IPTV Stream',
@@ -327,37 +328,7 @@ function initChromecastHandlers(ipcMain, mainWindow) {
     });
 
     ipcMain.handle('cast-play', async (event, deviceName, streamUrl, metadata = {}, proxyIp = null) => {
-        const device = castDevices[deviceName];
-        if (!device) {
-            const msg = `Device "${deviceName}" not found`;
-            console.error(`[Cast] Playback failed: ${msg}`);
-            return { success: false, error: msg };
-        }
-        activeCastDeviceName = deviceName;
-        
-        const ip = proxyIp || getLocalIP();
-        const proxyUrl = `http://${ip}:${PROXY_PORT}/stream?url=${encodeURIComponent(streamUrl)}`;
-
-        console.log(`[Cast] Sending stream to ${deviceName}...`);
-        console.log(`[Cast] Original URL: ${streamUrl}`);
-        console.log(`[Cast] Proxy URL (via ${ip}): ${proxyUrl}`);
-
-        const options = {
-            title: metadata.title || 'IPTV Stream',
-            images: metadata.images || []
-        };
-
-        return new Promise((resolve) => {
-            device.play(proxyUrl, options, (err) => {
-                if (err) {
-                    console.error(`[Cast] Playback Error on ${deviceName}:`, err && err.message);
-                    resolve({ success: false, error: err && err.message });
-                } else {
-                    console.log(`[Cast] Playback started successfully on ${deviceName}`);
-                    resolve({ success: true });
-                }
-            });
-        });
+        return playOnChromecast(deviceName, streamUrl, metadata, proxyIp);
     });
 
     ipcMain.handle('cast-stop', async (event, deviceName) => {
