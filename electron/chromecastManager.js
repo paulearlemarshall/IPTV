@@ -51,14 +51,17 @@ function initChromecastHandlers(ipcMain, mainWindow) {
     const proxyServer = http.createServer(async (req, res) => {
         const parsedUrl = url.parse(req.url, true);
         
+        console.log(`[Proxy] Incoming request: ${req.url} from ${req.socket.remoteAddress}`);
+
         // Early exit for invalid paths
         if (parsedUrl.pathname !== '/stream' || !parsedUrl.query.url) {
+            console.log(`[Proxy] Invalid request path or missing URL parameter`);
             res.statusCode = 404;
             return res.end();
         }
 
         const streamUrl = parsedUrl.query.url;
-        console.log(`Proxying stream for Chromecast: ${streamUrl}`);
+        console.log(`[Proxy] Proxying to: ${streamUrl}`);
         
         const headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -275,6 +278,8 @@ function initChromecastHandlers(ipcMain, mainWindow) {
             title: metadata.title || 'IPTV Stream',
             images: metadata.images || []
         };
+
+        console.log(`[Cast] Final play options:`, JSON.stringify(options, null, 2));
 
         return new Promise((resolve) => {
             device.play(proxyUrl, options, (err) => {
