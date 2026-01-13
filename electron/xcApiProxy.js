@@ -23,6 +23,7 @@ function initXCHandlers(ipcMain) {
             console.log(`[Cache] MISS: ${action}`);
         }
 
+        const startTime = performance.now();
         try {
             const base = server.replace(/\/$/, "");
             const url = new URL(`${base}/player_api.php`);
@@ -39,11 +40,15 @@ function initXCHandlers(ipcMain) {
                 headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
             });
 
+            const duration = (performance.now() - startTime).toFixed(1);
+            console.log(`[API Proxy] ${action} Success - Time: ${duration}ms`);
+
             apiCache.set(cacheKey, { data: response.data, timestamp: now });
 
             return { success: true, data: response.data, fromCache: false };
         } catch (error) {
-            console.error(`XC API Error (${action}):`, error.message);
+            const duration = (performance.now() - startTime).toFixed(1);
+            console.error(`[API Proxy] ${action} Error after ${duration}ms:`, error.message);
             return { success: false, error: error.message };
         }
     });
