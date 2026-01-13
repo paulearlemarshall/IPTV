@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   selectVlcPath: () => ipcRenderer.invoke('select-vlc-path'),
   castScan: () => ipcRenderer.invoke('cast-scan'),
   getAvailableIps: () => ipcRenderer.invoke('get-available-ips'),
-  castPlay: (device, url, metadata, proxyIp) => ipcRenderer.invoke('cast-play', device, url, metadata, proxyIp),
+  castPlay: (device, url, metadata, proxyIp, streamType, contentType) => ipcRenderer.invoke('cast-play', device, url, metadata, proxyIp, streamType, contentType),
   castStop: (device) => ipcRenderer.invoke('cast-stop', device),
   xcApi: (data) => ipcRenderer.invoke('xc-api', data),
   checkImageCache: (data) => ipcRenderer.invoke('check-image-cache', data),

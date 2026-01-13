@@ -260,7 +260,7 @@ function initChromecastHandlers(ipcMain, mainWindow) {
         return `http://${ip}:${PROXY_PORT}/stream?url=${encodeURIComponent(streamUrl)}`;
     }
 
-    function playOnChromecast(deviceName, streamUrl, metadata = {}, proxyIp = null) {
+    function playOnChromecast(deviceName, streamUrl, metadata = {}, proxyIp = null, streamType = 'BUFFERED', contentType = 'video/mp2t') {
         const device = castDevices[deviceName];
         if (!device) {
             const msg = `Device "${deviceName}" not found`;
@@ -271,12 +271,22 @@ function initChromecastHandlers(ipcMain, mainWindow) {
         const proxyUrl = buildProxyUrl(streamUrl, proxyIp);
 
         console.log(`[Cast] Sending stream to ${deviceName}...`);
-        console.log(`[Cast] Original URL: ${streamUrl}`);
         console.log(`[Cast] Proxy URL (via ${proxyIp || getLocalIP()}): ${proxyUrl}`);
+        console.log(`[Cast] Type: ${streamType}, Mime: ${contentType}`);
 
         const options = {
             title: metadata.title || 'IPTV Stream',
-            images: metadata.images || []
+            images: metadata.images || [],
+            streamType: streamType,
+            contentType: contentType,
+            metadata: {
+                type: metadata.type || 0, // 0: Generic, 1: Movie, 2: TV Show
+                metadata: {
+                    title: metadata.title,
+                    subtitle: metadata.subtitle,
+                    images: metadata.images
+                }
+            }
         };
 
         console.log(`[Cast] Final play options:`, JSON.stringify(options, null, 2));
@@ -332,8 +342,8 @@ function initChromecastHandlers(ipcMain, mainWindow) {
         return getLocalIPs();
     });
 
-    ipcMain.handle('cast-play', async (event, deviceName, streamUrl, metadata = {}, proxyIp = null) => {
-        return playOnChromecast(deviceName, streamUrl, metadata, proxyIp);
+    ipcMain.handle('cast-play', async (event, deviceName, streamUrl, metadata = {}, proxyIp = null, streamType = 'BUFFERED', contentType = 'video/mp2t') => {
+        return playOnChromecast(deviceName, streamUrl, metadata, proxyIp, streamType, contentType);
     });
 
     ipcMain.handle('cast-stop', async (event, deviceName) => {

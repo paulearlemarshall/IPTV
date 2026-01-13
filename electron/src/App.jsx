@@ -177,10 +177,30 @@ function App() {
             alert("No Chromecast selected. Please select a device from the dropdown.");
             return;
         }
+
+        // Determine technical details for Chromecast
+        const isLive = type === 'live';
+        const streamType = isLive ? 'LIVE' : 'BUFFERED';
+        const ext = stream.container_extension || (isLive ? 'ts' : 'mp4');
+        const mimeTypes = {
+            'ts': 'video/mp2t',
+            'm3u8': 'application/x-mpegURL',
+            'mp4': 'video/mp4',
+            'mkv': 'video/x-matroska'
+        };
+        const contentType = mimeTypes[ext] || 'video/mp2t';
+
+        // Determine metadata type (0: Generic, 1: Movie, 2: TV Show)
+        let metaType = 0;
+        if (type === 'vod') metaType = 1;
+        if (type === 'series' || type === 'episode') metaType = 2;
+
         window.api.castPlay(device, finalUrl, {
             title: stream.name || stream.title,
-            images: [{ url: getXcLogoUrl(stream, selectedServer) }]
-        }, selectedProxyIp);
+            subtitle: isLive ? 'Live TV' : (stream.release_date || stream.year || ''),
+            images: [{ url: getXcLogoUrl(stream, selectedServer) }],
+            type: metaType
+        }, selectedProxyIp, streamType, contentType);
     } else {
         window.api.launchVLC(finalUrl, null, stream.name || stream.title);
     }
