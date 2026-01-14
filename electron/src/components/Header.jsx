@@ -99,6 +99,23 @@ const Header = ({
           ))}
         </div>
 
+        {/* EN filter toggle (moved next to section tabs) */}
+        <button
+          onClick={() => setEnglishOnly(!englishOnly)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            fontSize: '0.75rem',
+            fontWeight: 'bold',
+            color: englishOnly ? getSectionColor() : '#909296',
+            cursor: 'pointer',
+            padding: '4px 8px'
+          }}
+          title="English Only Filter"
+        >
+          EN
+        </button>
+
         <button
           className="btn"
           onClick={() => {
@@ -199,7 +216,15 @@ const Header = ({
           {['vlc', 'internal', 'cast'].map(m => (
             <React.Fragment key={m}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '0.7rem' }}>
-                <input type="radio" name="playerMode" checked={playerMode === m} onChange={() => setPlayerMode(m)} /> 
+                <input 
+                    type="radio" 
+                    name="playerMode" 
+                    checked={playerMode === m} 
+                    onChange={() => {
+                        setPlayerMode(m);
+                        if (m === 'cast') window.api.castScan();
+                    }} 
+                /> 
                 <span onClick={m === 'vlc' ? handleVlcPathChange : undefined} style={{ cursor: m === 'vlc' ? 'pointer' : 'inherit' }}>{m.toUpperCase()}</span>
               </label>
               {m === 'cast' && playerMode === 'cast' && (
@@ -254,22 +279,6 @@ const Header = ({
             />
           )}
         </div>
-
-        <button
-          onClick={() => setEnglishOnly(!englishOnly)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            fontSize: '0.75rem',
-            fontWeight: 'bold',
-            color: englishOnly ? getSectionColor() : '#909296',
-            cursor: 'pointer',
-            padding: '4px 8px'
-          }}
-          title="English Only Filter"
-        >
-          EN
-        </button>
 
         <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} style={{ width: '80px', fontSize: '0.75rem' }}>
           <option value="none">Year</option>
