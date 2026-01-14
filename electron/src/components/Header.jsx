@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, RefreshCw, Play, Search, X, User, Bug, Calendar, ArrowDown, BookOpen } from 'lucide-react';
+import { Settings, RefreshCw, Play, Search, X, User, Bug, Calendar, ArrowDown, BookOpen, Film, Dna } from 'lucide-react';
 
 const Header = ({
   currentProfile,
@@ -43,7 +43,11 @@ const Header = ({
   sortByYear,
   setSortByYear,
   yearFilter,
-  setYearFilter
+  setYearFilter,
+  handleFfmpegPathChange,
+  ffmpegPath,
+  useTranscodeProxy,
+  setUseTranscodeProxy
 }) => {
   return (
     <div className="header">
@@ -208,6 +212,40 @@ const Header = ({
           title="Toggle API Debug"
         >
           <Bug size={16} />
+        </button>
+
+        <button
+          className="btn"
+          onClick={handleFfmpegPathChange}
+          style={{
+              background: 'transparent',
+              border: 'none',
+              color: ffmpegPath ? '#40c057' : '#909296',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '4px'
+          }}
+          title={ffmpegPath ? `FFmpeg: ${ffmpegPath}` : 'Set FFmpeg Path'}
+        >
+          <Film size={16} />
+        </button>
+
+        <button
+          className="btn"
+          onClick={() => ffmpegPath && setUseTranscodeProxy(!useTranscodeProxy)}
+          style={{
+              background: 'transparent',
+              border: 'none',
+              color: !ffmpegPath ? '#555' : (useTranscodeProxy ? '#ff6b6b' : '#909296'),
+              display: 'flex',
+              alignItems: 'center',
+              padding: '4px',
+              cursor: ffmpegPath ? 'pointer' : 'not-allowed',
+              opacity: ffmpegPath ? 1 : 0.5
+          }}
+          title={!ffmpegPath ? 'Set FFmpeg path first' : (useTranscodeProxy ? 'Transcode Proxy: ON' : 'Transcode Proxy: OFF')}
+        >
+          <Dna size={16} />
         </button>
 
         <input type="range" min="100" max="400" value={tileSize} onChange={(e) => setTileSize(Number(e.target.value))} style={{ width: '60px' }} />

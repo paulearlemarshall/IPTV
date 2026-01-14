@@ -15,6 +15,9 @@ import { useDownloadManager } from './hooks/useDownloadManager';
 import { useFavorites } from './hooks/useFavorites';
 import { useFilteredStreams } from './hooks/useFilteredStreams';
 import { useGroupedCategories } from './hooks/useGroupedCategories';
+import { useChromecast } from './hooks/useChromecast';
+import { useSettings } from './hooks/useSettings';
+import { usePlayer } from './hooks/usePlayer';
 import { getXcUrl, getXcLogoUrl } from './utils/xc';
 
 function App() {
@@ -29,12 +32,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [englishOnly, setEnglishOnly] = useState(false);
   const [playerMode, setPlayerMode] = useState('vlc');
-  const [currentStream, setCurrentStream] = useState(null);
 
-  const [castDevices, setCastDevices] = useState(['None']);
-  const [selectedCastDevice, setSelectedCastDevice] = useState('None');
-  const [availableIps, setAvailableIps] = useState([]);
-  const [selectedProxyIp, setSelectedProxyIp] = useState('');
   const [expandedGroups, setExpandedGroups] = useState({});
   const [tileSize, setTileSize] = useState(200);
   const [contextMenu, setContextMenu] = useState(null);
@@ -95,6 +93,26 @@ function App() {
     selectedServer,
     setShowDownloadManager
   });
+
+  // Use Chromecast hook
+  const {
+    castDevices,
+    selectedCastDevice,
+    setSelectedCastDevice,
+    availableIps,
+    selectedProxyIp,
+    setSelectedProxyIp
+  } = useChromecast();
+
+  // Use Settings hook
+  const {
+    ffmpegPath,
+    useTranscodeProxy,
+    setUseTranscodeProxy,
+    loadSettings,
+    handleVlcPathChange,
+    handleFfmpegPathChange
+  } = useSettings({ setStatus });
 
   // Determine which streams to filter: Global Cache (if searching) or Category Streams
   const streamsToFilter = (searchQuery.length > 2 && globalStreamsCache[selectedSection]) 
@@ -179,56 +197,28 @@ function App() {
     });
   }, [fetchStreamMetadataFromHook, selectedSection, selectedServer, currentProfile, setImageCacheMap]);
 
-  const playStream = useCallback(async (stream, type = selectedSection) => {
-    if (type === 'series') {
-        fetchSeriesInfo(stream.series_id);
-        return;
-    }
-    const finalUrl = getXcUrl(stream, type, currentProfile, selectedServer);
-    if (!finalUrl) return;
-    
-    if (playerMode === 'internal') {
-        setCurrentStream({ ...stream, url: finalUrl });
-    } else if (playerMode === 'cast') {
-        const device = selectedCastDevice?.trim();
-        if (!device || device === 'None' || device === '') {
-            alert("No Chromecast selected. Please select a device from the dropdown.");
-            return;
-        }
-
-        // Determine technical details for Chromecast
-        const isLive = type === 'live';
-        const streamType = isLive ? 'LIVE' : 'BUFFERED';
-        const ext = stream.container_extension || (isLive ? 'ts' : 'mp4');
-        const mimeTypes = {
-            'ts': 'video/mp2t',
-            'm3u8': 'application/x-mpegURL',
-            'mp4': 'video/mp4',
-            'mkv': 'video/x-matroska'
-        };
-        const contentType = mimeTypes[ext] || 'video/mp2t';
-
-        // Determine metadata type (0: Generic, 1: Movie, 2: TV Show)
-        let metaType = 0;
-        if (type === 'vod') metaType = 1;
-        if (type === 'series' || type === 'episode') metaType = 2;
-
-        window.api.castPlay(device, finalUrl, {
-            title: stream.name || stream.title,
-            subtitle: isLive ? 'Live TV' : (stream.release_date || stream.year || ''),
-            images: [{ url: getXcLogoUrl(stream, selectedServer) }],
-            type: metaType
-        }, selectedProxyIp, streamType, contentType);
-    } else {
-        window.api.launchVLC(finalUrl, null, stream.name || stream.title);
-    }
-  }, [playerMode, selectedCastDevice, selectedSection, currentProfile, selectedServer, fetchSeriesInfo, selectedProxyIp]);
+  // Use Player hook
+  const {
+    currentStream,
+    playStream,
+    closePlayer
+  } = usePlayer({
+    playerMode,
+    selectedCastDevice,
+    selectedSection,
+    currentProfile,
+    selectedServer,
+    selectedProxyIp,
+    useTranscodeProxy,
+    ffmpegPath,
+    fetchSeriesInfo
+  });
 
   // --- Effects ---
 
   useEffect(() => {
     const init = async () => {
-        const config = await window.api.config.load();
+        const config = await loadSettings();
         if (config.profiles?.length > 0) {
             const active = config.profiles.find(p => p.id === config.activeProfileId) || config.profiles[0];
             setCurrentProfile(active);
@@ -236,30 +226,9 @@ function App() {
         } else {
             setShowProfiles(true);
         }
-
-        if (window.api.onCastDeviceFound) {
-            window.api.onCastDeviceFound((name) => {
-                setCastDevices(prev => {
-                    if (prev.includes(name)) return prev;
-                    const next = [...prev.filter(d => d !== 'None'), name];
-                    setSelectedCastDevice(current => {
-                        if (!current || current === 'None') return name;
-                        return current;
-                    });
-                    return next;
-                });
-            });
-            window.api.castScan();
-        }
-
-        if (window.api.getAvailableIps) {
-            const ips = await window.api.getAvailableIps();
-            setAvailableIps(ips);
-            if (ips.length > 0) setSelectedProxyIp(ips[0]);
-        }
     };
     init();
-  }, []);
+  }, [loadSettings]);
 
   useEffect(() => {
     if (currentProfile && selectedServer) {
@@ -317,18 +286,6 @@ function App() {
 
     // Normal click on already selected category
     fetchStreams(catId, false);
-  };
-
-  const handleVlcPathChange = async () => {
-    if (window.api && window.api.selectVlcPath) {
-        const newPath = await window.api.selectVlcPath();
-        if (newPath) {
-            const config = await window.api.config.load();
-            config.vlcPath = newPath;
-            await window.api.config.save(config);
-            setStatus(`VLC path updated: ${newPath}`);
-        }
-    }
   };
 
   const handleCloseContextMenu = () => setContextMenu(null);
@@ -436,6 +393,10 @@ function App() {
         setSortByYear={setSortByYear}
         yearFilter={yearFilter}
         setYearFilter={setYearFilter}
+        handleFfmpegPathChange={handleFfmpegPathChange}
+        ffmpegPath={ffmpegPath}
+        useTranscodeProxy={useTranscodeProxy}
+        setUseTranscodeProxy={setUseTranscodeProxy}
       />
 
       <div className="main-content">
@@ -568,7 +529,7 @@ function App() {
         </div>
       </div>
 
-      {currentStream && <VideoPlayer url={currentStream.url} title={currentStream.name || currentStream.title} onClose={() => setCurrentStream(null)} />}
+      {currentStream && <VideoPlayer url={currentStream.url} title={currentStream.name || currentStream.title} onClose={closePlayer} />}
 
       <AccountModal accountInfo={accountInfo} clearAccountInfo={clearAccountInfo} />
 

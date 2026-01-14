@@ -9,32 +9,10 @@ const { initImageHandlers } = require('./imageManager');
 const { initXCHandlers } = require('./xcApiProxy');
 const { initDownloadHandlers } = require('./downloadManager');
 const { initVLCHandlers } = require('./vlcManager');
+const { initErrorHandlers } = require('./errorLogger');
 
-// --- CRITICAL ERROR LOGGING ---
-const LOG_FILE = path.join(__dirname, 'startup_error.log');
-
-function logToFile(msg) {
-    const timestamp = new Date().toISOString();
-    const logMsg = `[${timestamp}] ${msg}\n`;
-    try {
-        fs.appendFileSync(LOG_FILE, logMsg);
-    } catch (e) {}
-}
-
-process.on('uncaughtException', (error) => {
-    const msg = `UNCAUGHT EXCEPTION: ${error.message}\n${error.stack}`;
-    console.error(msg);
-    logToFile(msg);
-    process.exit(1);
-});
-
-process.on('unhandledRejection', (reason) => {
-    const msg = `UNHANDLED REJECTION: ${reason}`;
-    console.error(msg);
-    logToFile(msg);
-});
-
-logToFile("App starting...");
+// --- Initialize Error Handling ---
+initErrorHandlers();
 
 // --- Constants & Global Paths ---
 const USER_DATA_PATH = app.getPath('userData');
@@ -53,41 +31,6 @@ const getProfileCachePaths = (profileId) => {
         images: imageDir
     };
 };
-
-// --- Migration Logic ---
-const migrateLegacyFiles = () => {
-    const legacyM3U = path.join(USER_DATA_PATH, 'playlist.m3u');
-    const legacyImageDir = path.join(USER_DATA_PATH, 'images');
-    const targetPaths = getProfileCachePaths(TRENDY_ID);
-
-    try {
-        if (fs.existsSync(legacyM3U) && !fs.existsSync(targetPaths.m3u)) {
-            console.log("Migrating legacy M3U file...");
-            fs.renameSync(legacyM3U, targetPaths.m3u);
-        }
-
-        if (fs.existsSync(legacyImageDir)) {
-            const files = fs.readdirSync(legacyImageDir);
-            if (files.length > 0) {
-                console.log(`Migrating ${files.length} legacy images...`);
-                files.forEach(file => {
-                    const oldPath = path.join(legacyImageDir, file);
-                    const newPath = path.join(targetPaths.images, file);
-                    if (!fs.existsSync(newPath)) {
-                        fs.renameSync(oldPath, newPath);
-                    } else {
-                        fs.unlinkSync(oldPath);
-                    }
-                });
-            }
-            try { fs.rmdirSync(legacyImageDir); } catch(e) {}
-        }
-    } catch (err) {
-        console.error("Migration failed:", err);
-    }
-};
-
-migrateLegacyFiles();
 
 // --- Window Management ---
 let mainWindow;
@@ -114,7 +57,7 @@ const createWindow = () => {
 
   // --- Initialize Modular Handlers ---
   const configManager = initConfigHandlers(ipcMain, dialog, mainWindow, USER_DATA_PATH, TRENDY_ID);
-  initChromecastHandlers(ipcMain, mainWindow);
+  initChromecastHandlers(ipcMain, mainWindow, configManager.getConfig);
   initImageHandlers(ipcMain, getProfileCachePaths);
   initXCHandlers(ipcMain);
   initDownloadHandlers(ipcMain, () => mainWindow, getProfileCachePaths);

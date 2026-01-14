@@ -3,9 +3,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   launchVLC: (url, path, title) => ipcRenderer.invoke('launch-vlc', url, path, title),
   selectVlcPath: () => ipcRenderer.invoke('select-vlc-path'),
+  selectFfmpegPath: () => ipcRenderer.invoke('select-ffmpeg-path'),
   castScan: () => ipcRenderer.invoke('cast-scan'),
   getAvailableIps: () => ipcRenderer.invoke('get-available-ips'),
   castPlay: (device, url, metadata, proxyIp, streamType, contentType) => ipcRenderer.invoke('cast-play', device, url, metadata, proxyIp, streamType, contentType),
+  castPlayFfmpeg: (device, url, metadata, proxyIp) => ipcRenderer.invoke('cast-play-ffmpeg', device, url, metadata, proxyIp),
   castStop: (device) => ipcRenderer.invoke('cast-stop', device),
   xcApi: (data) => ipcRenderer.invoke('xc-api', data),
   checkImageCache: (data) => ipcRenderer.invoke('check-image-cache', data),

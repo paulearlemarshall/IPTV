@@ -7,7 +7,8 @@ function initConfigHandlers(ipcMain, dialog, mainWindow, USER_DATA_PATH, TRENDY_
     const stringifyINI = (config) => {
         let output = "[Settings]\n";
         output += "activeProfileId=" + (config.activeProfileId || "") + "\n";
-        output += "vlcPath=" + (config.vlcPath || "") + "\n\n";
+        output += "vlcPath=" + (config.vlcPath || "") + "\n";
+        output += "ffmpegPath=" + (config.ffmpegPath || "") + "\n\n";
         (config.profiles || []).forEach(p => {
             output += `[Profile_${p.id}]\nid=${p.id}\nname=${p.name}\nusername=${p.username}\npassword=${p.password}\nservers=${(p.servers || []).join(',')}\nfavorites=${(p.favorites || []).join(',')}\n\n`;
         });
@@ -16,7 +17,7 @@ function initConfigHandlers(ipcMain, dialog, mainWindow, USER_DATA_PATH, TRENDY_
 
     const parseINI = (data) => {
         const lines = data.split(/\r?\n/);
-        const config = { profiles: [], activeProfileId: null, vlcPath: null };
+        const config = { profiles: [], activeProfileId: null, vlcPath: null, ffmpegPath: null };
         let currentProfile = null;
         let currentSection = null;
 
@@ -39,6 +40,7 @@ function initConfigHandlers(ipcMain, dialog, mainWindow, USER_DATA_PATH, TRENDY_
             if (currentSection === 'Settings') {
                 if (key === 'activeProfileId') config.activeProfileId = value || null;
                 if (key === 'vlcPath') config.vlcPath = value || null;
+                if (key === 'ffmpegPath') config.ffmpegPath = value || null;
             } else if (currentProfile) {
                 if (key === 'servers' || key === 'favorites') {
                     currentProfile[key] = value ? value.split(',') : [];
@@ -87,6 +89,18 @@ function initConfigHandlers(ipcMain, dialog, mainWindow, USER_DATA_PATH, TRENDY_
         return null;
     });
 
+    ipcMain.handle('select-ffmpeg-path', async () => {
+        const result = await dialog.showOpenDialog(mainWindow, {
+            title: 'Select FFmpeg Folder (containing ffmpeg binaries)',
+            properties: ['openDirectory']
+        });
+
+        if (!result.canceled && result.filePaths.length > 0) {
+            return result.filePaths[0];
+        }
+        return null;
+    });
+
     ipcMain.handle('save-config', async (event, config) => {
         const fs = require('fs');
         try {
@@ -97,8 +111,17 @@ function initConfigHandlers(ipcMain, dialog, mainWindow, USER_DATA_PATH, TRENDY_
         }
     });
 
+    // Helper function to get config (for use by other modules)
+    const getConfig = () => {
+        const fs = require('fs');
+        if (!fs.existsSync(CONFIG_FILE)) {
+            return { activeProfileId: null, vlcPath: null, ffmpegPath: null, profiles: [] };
+        }
+        return parseINI(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+    };
+
     // Also export parseINI for use in other modules (like launch-vlc)
-    return { parseINI, CONFIG_FILE };
+    return { parseINI, CONFIG_FILE, getConfig };
 }
 
 module.exports = { initConfigHandlers };
