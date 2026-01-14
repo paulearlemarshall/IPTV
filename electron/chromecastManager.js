@@ -3,8 +3,35 @@ const url = require('url');
 const axios = require('axios');
 const os = require('os');
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 const ChromecastAPI = require('chromecast-api');
+
+// --- HLS Configuration ---
+const HLS_BASE_DIR = path.join(os.tmpdir(), 'iptv_hls_cache');
+
+// Cleanup HLS cache on startup
+if (fs.existsSync(HLS_BASE_DIR)) {
+    try {
+        const deleteFolderRecursive = function(folderPath) {
+            if (fs.existsSync(folderPath)) {
+                fs.readdirSync(folderPath).forEach((file) => {
+                    const curPath = path.join(folderPath, file);
+                    if (fs.lstatSync(curPath).isDirectory()) {
+                        deleteFolderRecursive(curPath);
+                    } else {
+                        fs.unlinkSync(curPath);
+                    }
+                });
+                fs.rmdirSync(folderPath);
+            }
+        };
+        deleteFolderRecursive(HLS_BASE_DIR);
+    } catch (e) {
+        console.error('[HLS] Startup cleanup failed:', e.message);
+    }
+}
+if (!fs.existsSync(HLS_BASE_DIR)) fs.mkdirSync(HLS_BASE_DIR, { recursive: true });
 
 /**
  * Helper: find a local non-internal IPv4 address
@@ -42,7 +69,7 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
     // Internal state
     let castDevices = {}; // name -> device
     let activeCastDeviceName = null;
-    let activeFfmpegProcesses = new Map(); // track active ffmpeg processes
+    let activeStreams = new Map(); // url -> { ff, hlsDir, killTimeout: Timer }
 
     // Pending device names to send to renderer when ready
     const pendingDeviceNames = new Set();
@@ -51,7 +78,7 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
     // Polling handle
     let pollIntervalHandle = null;
 
-    // --- Local Proxy Server for Chromecast ---
+    // --- Local Proxy Server for Chromecast (Direct Proxy) ---
     const proxyServer = http.createServer(async (req, res) => {
         const parsedUrl = url.parse(req.url, true);
         
@@ -127,157 +154,51 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
         console.log(`Stream proxy for Chromecast listening on http://${getLocalIP()}:${PROXY_PORT}`);
     });
 
-    // --- FFmpeg Transcoding Proxy Server for Chromecast ---
+    // --- HLS Static Server for Chromecast ---
     const ffmpegProxyServer = http.createServer(async (req, res) => {
         const parsedUrl = url.parse(req.url, true);
+        const parts = parsedUrl.pathname.split('/').filter(Boolean); // Expected: [hls, requestId, filename]
         
-        console.log(`[FFmpeg Proxy] Incoming ${req.method} request: ${req.url} from ${req.socket.remoteAddress}`);
-        console.log(`[FFmpeg Proxy] Headers:`, JSON.stringify(req.headers, null, 2));
+        console.log(`[HLS Server] Request: ${req.url}`);
 
-        // Handle CORS preflight
-        if (req.method === 'OPTIONS') {
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-            res.setHeader('Access-Control-Allow-Headers', '*');
-            res.statusCode = 200;
-            return res.end();
-        }
+        if (parts[0] === 'hls' && parts.length === 3) {
+            const requestId = parts[1];
+            const filename = parts[2];
+            const filePath = path.join(HLS_BASE_DIR, requestId, filename);
 
-        // Handle HEAD requests (Chromecast probing)
-        if (req.method === 'HEAD') {
-            console.log(`[FFmpeg Proxy] HEAD request - returning headers only`);
-            res.setHeader('Content-Type', 'video/mp2t');
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Accept-Ranges', 'bytes');
-            res.statusCode = 200;
-            return res.end();
-        }
-
-        if (parsedUrl.pathname !== '/transcode' || !parsedUrl.query.url) {
-            console.log(`[FFmpeg Proxy] Invalid request path or missing URL parameter`);
-            res.statusCode = 404;
-            return res.end();
-        }
-
-        const streamUrl = parsedUrl.query.url;
-        const requestId = Date.now().toString();
-        console.log(`[FFmpeg Proxy] Starting transcode for: ${streamUrl}`);
-
-        // Get ffmpeg path from config
-        let ffmpegPath = 'ffmpeg'; // default to PATH
-        try {
-            if (getConfigFunc) {
-                const config = await getConfigFunc();
-                if (config && config.ffmpegPath) {
-                    const fs = require('fs');
-                    const platform = process.platform;
-                    const ffmpegBinary = platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-                    
-                    // Check common locations: direct path, bin subdirectory
-                    const possiblePaths = [
-                        path.join(config.ffmpegPath, ffmpegBinary),
-                        path.join(config.ffmpegPath, 'bin', ffmpegBinary)
-                    ];
-                    
-                    for (const p of possiblePaths) {
-                        if (fs.existsSync(p)) {
-                            ffmpegPath = p;
-                            console.log(`[FFmpeg Proxy] Found ffmpeg at: ${ffmpegPath}`);
-                            break;
+            if (fs.existsSync(filePath)) {
+                if (filename.endsWith('.m3u8')) res.setHeader('Content-Type', 'application/x-mpegURL');
+                else if (filename.endsWith('.ts')) res.setHeader('Content-Type', 'video/mp2t');
+                
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.setHeader('Cache-Control', 'no-cache');
+                
+                // Track activity to prevent premature cleanup
+                for (const [url, state] of activeStreams.entries()) {
+                    if (state.hlsDir.includes(requestId)) {
+                        if (state.killTimeout) {
+                            clearTimeout(state.killTimeout);
+                            state.killTimeout = null;
+                            console.log(`[HLS Server] Activity detected, cancelled timeout for: ${requestId}`);
                         }
-                    }
-                    
-                    if (ffmpegPath === 'ffmpeg') {
-                        console.log(`[FFmpeg Proxy] ffmpeg not found in ${config.ffmpegPath}, falling back to PATH`);
+                        break;
                     }
                 }
+
+                fs.createReadStream(filePath).pipe(res);
+                return;
+            } else {
+                res.statusCode = 404;
+                return res.end();
             }
-        } catch (e) {
-            console.log(`[FFmpeg Proxy] Could not get config, using default ffmpeg: ${e.message}`);
         }
 
-        // FFmpeg arguments for Chromecast-compatible transcoding
-        // Output: H.264 video, AAC audio in MPEG-TS container (Chromecast compatible)
-        const ffmpegArgs = [
-            '-hide_banner',
-            '-loglevel', 'warning',
-            '-reconnect', '1',
-            '-reconnect_at_eof', '1',
-            '-reconnect_streamed', '1',
-            '-reconnect_delay_max', '5',
-            '-probesize', '10000000',
-            '-analyzeduration', '10000000',
-            '-i', streamUrl,
-            '-map', '0:v:0',
-            '-map', '0:a:0?',
-            '-vf', 'scale=1920:-2:force_original_aspect_ratio=decrease,format=yuv420p',
-            '-c:v', 'libx264',
-            '-preset', 'fast',
-            '-crf', '23',
-            '-tune', 'zerolatency',
-            '-profile:v', 'high',
-            '-level', '4.1',
-            '-bsf:v', 'h264_mp4toannexb',
-            '-g', '50',
-            '-c:a', 'aac',
-            '-ac', '2',
-            '-ar', '48000',
-            '-b:a', '192k',
-            '-f', 'mpegts',
-            '-muxdelay', '0.1',
-            'pipe:1'
-        ];
-
-        console.log(`[FFmpeg Proxy] Command: ${ffmpegPath} ${ffmpegArgs.join(' ')}`);
-
-        res.setHeader('Content-Type', 'video/mp2t');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Accept-Ranges', 'bytes');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        // DLNA headers for better compatibility
-        res.setHeader('transferMode.dlna.org', 'Streaming');
-        res.setHeader('contentFeatures.dlna.org', 'DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000');
-
-        try {
-            const ffmpeg = spawn(ffmpegPath, ffmpegArgs);
-            activeFfmpegProcesses.set(requestId, ffmpeg);
-
-            ffmpeg.stdout.pipe(res);
-
-            ffmpeg.stderr.on('data', (data) => {
-                console.error(`[FFmpeg Proxy] stderr: ${data.toString()}`);
-            });
-
-            ffmpeg.on('error', (err) => {
-                console.error(`[FFmpeg Proxy] Process error: ${err.message}`);
-                activeFfmpegProcesses.delete(requestId);
-                if (!res.headersSent) {
-                    res.statusCode = 500;
-                    res.end(`FFmpeg Error: ${err.message}`);
-                }
-            });
-
-            ffmpeg.on('close', (code) => {
-                console.log(`[FFmpeg Proxy] Process closed with code: ${code}`);
-                activeFfmpegProcesses.delete(requestId);
-            });
-
-            req.on('close', () => {
-                console.log(`[FFmpeg Proxy] Client disconnected, killing ffmpeg`);
-                ffmpeg.kill('SIGKILL');
-                activeFfmpegProcesses.delete(requestId);
-            });
-
-        } catch (e) {
-            console.error(`[FFmpeg Proxy] Spawn error: ${e.message}`);
-            res.statusCode = 500;
-            res.end(`FFmpeg Spawn Error: ${e.message}`);
-        }
+        res.statusCode = 404;
+        res.end();
     });
 
     ffmpegProxyServer.listen(FFMPEG_PROXY_PORT, '0.0.0.0', () => {
-        console.log(`FFmpeg transcoding proxy for Chromecast listening on http://${getLocalIP()}:${FFMPEG_PROXY_PORT}`);
+        console.log(`HLS proxy for Chromecast listening on http://${getLocalIP()}:${FFMPEG_PROXY_PORT}`);
     });
 
     // -----------------------
@@ -289,7 +210,6 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
         try {
             const win = mainWindow;
             if (!win || win.isDestroyed()) {
-                // queue it
                 pendingDeviceNames.add(name);
                 attachFlushOnLoad(win);
                 return;
@@ -302,10 +222,8 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
                 return;
             }
 
-            // ready to send
             wc.send('cast-device-found', name);
         } catch (e) {
-            // On any unexpected error, queue for later
             pendingDeviceNames.add(name);
             attachFlushOnLoad(mainWindow);
         }
@@ -352,15 +270,10 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
     }
 
     function initializeChromecast() {
-        // remove previous listeners to avoid duplicates
         try {
             castClient.removeAllListeners('device');
-        } catch (e) {
-            // ignore
-        }
+        } catch (e) {}
         castClient.on('device', handleDeviceFound);
-
-        // ensure we have an initial discovery kick-off
         try {
             castClient.update();
         } catch (e) {
@@ -369,16 +282,12 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
     }
 
     function startDevicePolling(intervalMs = 30000) {
-        // immediate kick-off
         try {
             castClient.update();
         } catch (e) {
             console.error('[Chromecast] startDevicePolling immediate update failed:', e && e.message);
         }
-
-        // avoid multiple intervals
         if (pollIntervalHandle) clearInterval(pollIntervalHandle);
-
         pollIntervalHandle = setInterval(() => {
             try {
                 castClient.update();
@@ -386,7 +295,6 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
                 console.error('[Chromecast] Polling update failed:', e && e.message);
             }
         }, intervalMs);
-
         return pollIntervalHandle;
     }
 
@@ -419,7 +327,8 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
 
     function buildFfmpegProxyUrl(streamUrl, proxyIp = null) {
         const ip = proxyIp || getLocalIP();
-        return `http://${ip}:${FFMPEG_PROXY_PORT}/transcode?url=${encodeURIComponent(streamUrl)}`;
+        const requestId = Buffer.from(streamUrl).toString('hex').slice(0, 16);
+        return `http://${ip}:${FFMPEG_PROXY_PORT}/hls/${requestId}/index.m3u8`;
     }
 
     function playOnChromecast(deviceName, streamUrl, metadata = {}, proxyIp = null, streamType = 'BUFFERED', contentType = 'video/mp2t') {
@@ -432,17 +341,13 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
         activeCastDeviceName = deviceName;
         const proxyUrl = buildProxyUrl(streamUrl, proxyIp);
 
-        console.log(`[Cast] Sending stream to ${deviceName}...`);
-        console.log(`[Cast] Proxy URL (via ${proxyIp || getLocalIP()}): ${proxyUrl}`);
-        console.log(`[Cast] Type: ${streamType}, Mime: ${contentType}`);
-
         const options = {
             title: metadata.title || 'IPTV Stream',
             images: metadata.images || [],
             streamType: streamType,
             contentType: contentType,
             metadata: {
-                type: metadata.type || 0, // 0: Generic, 1: Movie, 2: TV Show
+                type: metadata.type || 0,
                 metadata: {
                     title: metadata.title,
                     subtitle: metadata.subtitle,
@@ -450,8 +355,6 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
                 }
             }
         };
-
-        console.log(`[Cast] Final play options:`, JSON.stringify(options, null, 2));
 
         return new Promise((resolve) => {
             device.play(proxyUrl, options, (err) => {
@@ -470,20 +373,91 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
         const device = castDevices[deviceName];
         if (!device) {
             const msg = `Device "${deviceName}" not found`;
-            console.error(`[Cast FFmpeg] Playback failed: ${msg}`);
+            console.error(`[Cast HLS] Playback failed: ${msg}`);
             return Promise.resolve({ success: false, error: msg });
         }
         activeCastDeviceName = deviceName;
+        
+        const requestId = Buffer.from(streamUrl).toString('hex').slice(0, 16);
+        const hlsDir = path.join(HLS_BASE_DIR, requestId);
+        const playlistPath = path.join(hlsDir, 'index.m3u8');
         const proxyUrl = buildFfmpegProxyUrl(streamUrl, proxyIp);
 
-        console.log(`[Cast FFmpeg] Sending transcoded stream to ${deviceName}...`);
-        console.log(`[Cast FFmpeg] FFmpeg Proxy URL (via ${proxyIp || getLocalIP()}): ${proxyUrl}`);
+        let s = activeStreams.get(streamUrl);
+
+        if (!s) {
+            console.log(`[Cast HLS] Starting NEW HLS transcode process for: ${streamUrl}`);
+            if (!fs.existsSync(hlsDir)) fs.mkdirSync(hlsDir, { recursive: true });
+
+            let ffmpegPath = 'ffmpeg';
+            try {
+                if (getConfigFunc) {
+                    const config = getConfigFunc();
+                    if (config && config.ffmpegPath) {
+                        const ffmpegBinary = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+                        const p1 = path.join(config.ffmpegPath, ffmpegBinary);
+                        const p2 = path.join(config.ffmpegPath, 'bin', ffmpegBinary);
+                        if (fs.existsSync(p1)) ffmpegPath = p1;
+                        else if (fs.existsSync(p2)) ffmpegPath = p2;
+                    }
+                }
+            } catch (e) {}
+
+            const ffmpegArgs = [
+                '-hide_banner', '-loglevel', 'warning',
+                '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+                '-i', streamUrl,
+                '-map', '0:v:0', '-map', '0:a:0?',
+                '-vf', 'scale=1920:-2:force_original_aspect_ratio=decrease',
+                '-c:v', 'libx264',
+                '-profile:v', 'main',
+                '-level', '4.0',
+                '-pix_fmt', 'yuv420p',
+                '-preset', 'ultrafast',
+                '-tune', 'zerolatency',
+                '-b:v', '6000k',
+                '-maxrate', '6500k',
+                '-bufsize', '12000k',
+                '-g', '48',
+                '-keyint_min', '48',
+                '-sc_threshold', '0',
+                '-c:a', 'aac',
+                '-ac', '2',
+                '-ar', '48000',
+                '-b:a', '160k',
+                '-f', 'hls',
+                '-hls_time', '2',
+                '-hls_list_size', '6',
+                '-hls_flags', 'delete_segments+append_list+independent_segments',
+                '-hls_segment_type', 'mpegts',
+                '-hls_segment_filename', path.join(hlsDir, 'seg_%03d.ts'),
+                playlistPath
+            ];
+
+            const ff = spawn(ffmpegPath, ffmpegArgs);
+            s = { ff, hlsDir, killTimeout: null };
+            activeStreams.set(streamUrl, s);
+
+            ff.on('close', () => {
+                console.log(`[Cast HLS] FFmpeg process closed`);
+                activeStreams.delete(streamUrl);
+                try {
+                    if (fs.existsSync(hlsDir)) {
+                        fs.readdirSync(hlsDir).forEach(f => fs.unlinkSync(path.join(hlsDir, f)));
+                        fs.rmdirSync(hlsDir);
+                    }
+                } catch (e) {}
+            });
+        } else if (s.killTimeout) {
+            clearTimeout(s.killTimeout);
+            s.killTimeout = null;
+        }
 
         const options = {
             title: metadata.title || 'IPTV Stream',
             images: metadata.images || [],
-            streamType: 'BUFFERED',
-            contentType: 'video/mp2t',
+            streamType: 'LIVE',
+            contentType: 'application/x-mpegURL',
             metadata: {
                 type: metadata.type || 0,
                 metadata: {
@@ -494,18 +468,27 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
             }
         };
 
-        console.log(`[Cast FFmpeg] Final play options:`, JSON.stringify(options, null, 2));
-
         return new Promise((resolve) => {
-            device.play(proxyUrl, options, (err) => {
-                if (err) {
-                    console.error(`[Cast FFmpeg] Playback Error on ${deviceName}:`, err && err.message);
-                    resolve({ success: false, error: err && err.message });
-                } else {
-                    console.log(`[Cast FFmpeg] Playback started successfully on ${deviceName}`);
-                    resolve({ success: true });
+            let attempts = 0;
+            const checkFile = setInterval(() => {
+                attempts++;
+                if (fs.existsSync(playlistPath)) {
+                    clearInterval(checkFile);
+                    console.log(`[Cast HLS] Playlist ready, sending to device...`);
+                    device.play(proxyUrl, options, (err) => {
+                        if (err) {
+                            console.error(`[Cast HLS] Playback Error on ${deviceName}:`, err.message);
+                            resolve({ success: false, error: err.message });
+                        } else {
+                            console.log(`[Cast HLS] Playback started successfully`);
+                            resolve({ success: true });
+                        }
+                    });
+                } else if (attempts > 100) {
+                    clearInterval(checkFile);
+                    resolve({ success: false, error: 'HLS generation timeout' });
                 }
-            });
+            }, 100);
         });
     }
 
@@ -517,6 +500,14 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
         return new Promise((resolve) => {
             device.stop(() => {
                 if (name === activeCastDeviceName) activeCastDeviceName = null;
+                for (const [url, state] of activeStreams.entries()) {
+                    if (!state.killTimeout) {
+                        state.killTimeout = setTimeout(() => {
+                            console.log(`[Cast HLS] Kill timeout reached, stopping ffmpeg`);
+                            state.ff.kill('SIGKILL');
+                        }, 30000);
+                    }
+                }
                 resolve({ success: true });
             });
         });
@@ -530,14 +521,9 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
         return Object.keys(castDevices);
     }
 
-    // -----------------------
-    // Start initial discovery
-    // -----------------------
     initializeChromecast();
-    // keep the legacy periodic scanning behavior running by default (30s)
     const scanInterval = startDevicePolling(30000);
 
-    // --- IPC Handlers (kept for compatibility with renderer calls) ---
     ipcMain.handle('cast-scan', async () => { 
         console.log("[Chromecast] Starting network scan...");
         return scanForDevices();
@@ -559,7 +545,6 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
         return playOnChromecastWithFfmpeg(deviceName, streamUrl, metadata, proxyIp);
     });
 
-    // Return useful handles and functions for external control/testing if needed
     return {
         proxyServer,
         ffmpegProxyServer,
@@ -576,12 +561,11 @@ function initChromecastHandlers(ipcMain, mainWindow, getConfigFunc) {
         stopChromecast,
         getActiveCastDevice,
         getAllDevices,
-        // exposed for testing/debugging:
         _internal: {
             castClient,
             castDevices,
             pendingDeviceNames,
-            activeFfmpegProcesses
+            activeStreams
         }
     };
 }
