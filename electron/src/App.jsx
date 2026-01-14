@@ -62,6 +62,7 @@ function App() {
     displayCount,
     viewMode,
     activeSeason,
+    globalStreamsCache,
     setStreams,
     setDisplayCount,
     setStatus,
@@ -70,6 +71,7 @@ function App() {
     fetchSeriesInfo: fetchSeriesInfoFromHook,
     fetchAccountInfo: fetchAccountInfoFromHook,
     fetchStreamMetadata: fetchStreamMetadataFromHook,
+    fetchAllStreams,
     backToList,
     clearAccountInfo
   } = xcApi;
@@ -94,9 +96,25 @@ function App() {
     setShowDownloadManager
   });
 
+  // Determine which streams to filter: Global Cache (if searching) or Category Streams
+  const streamsToFilter = (searchQuery.length > 2 && globalStreamsCache[selectedSection]) 
+    ? globalStreamsCache[selectedSection] 
+    : streams;
+
+  // Trigger Global Search when query is typed
+  useEffect(() => {
+    if (searchQuery.length > 2 && !globalStreamsCache[selectedSection]) {
+        fetchAllStreams({
+            section: selectedSection,
+            server: selectedServer,
+            profile: currentProfile
+        });
+    }
+  }, [searchQuery, selectedSection, globalStreamsCache, selectedServer, currentProfile, fetchAllStreams]);
+
   // Use Filtered Streams hook
   const { visibleStreams, totalFilteredCount } = useFilteredStreams({
-    streams,
+    streams: streamsToFilter,
     searchQuery,
     englishOnly,
     yearFilter,
@@ -448,7 +466,46 @@ function App() {
             />
           ) : (
             <>
-              <div className="sidebar-header" style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+              {/* Series Details Backdrop */}
+              {viewMode === 'details' && seriesInfo?.info?.backdrop_path && (
+                <>
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 0,
+                    overflow: 'hidden'
+                  }}>
+                    <CachedImage
+                      src={Array.isArray(seriesInfo.info.backdrop_path) ? seriesInfo.info.backdrop_path[0] : seriesInfo.info.backdrop_path}
+                      alt="Backdrop"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        opacity: 0.3,
+                        filter: 'blur(3px)'
+                      }}
+                      profileId={currentProfile?.id}
+                      cacheMap={imageCacheMap}
+                      apiDebug={apiDebug}
+                    />
+                  </div>
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'radial-gradient(circle, transparent 0%, var(--bg-primary) 100%)',
+                    zIndex: 1
+                  }} />
+                </>
+              )}
+
+              <div className="sidebar-header" style={{ display: 'flex', gap: '15px', alignItems: 'center', position: 'relative', zIndex: 2 }}>
                 {viewMode === 'details' ? (
                     <><button className="btn" onClick={backToList} style={{ padding: '2px 8px', fontSize: '0.7rem' }}>← BACK</button>
                     <span style={{ color: 'var(--section-accent)', fontWeight: 'bold' }}>{seriesInfo?.info?.name}</span></>
@@ -462,7 +519,7 @@ function App() {
                 )}
               </div>
 
-              <div className="stream-list" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))` }}>
+              <div className="stream-list" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`, position: 'relative', zIndex: 2 }}>
                 {viewMode === 'details' ? (
                     Object.keys(seriesInfo?.episodes || {}).sort((a,b) => parseInt(a)-parseInt(b)).map(seasonNum => (
                         <React.Fragment key={`season-${seasonNum}`}>

@@ -12,6 +12,7 @@ export function useXCApi({ apiDebug = false } = {}) {
   const [displayCount, setDisplayCount] = useState(100);
   const [viewMode, setViewMode] = useState('list');
   const [activeSeason, setActiveSeason] = useState(null);
+  const [globalStreamsCache, setGlobalStreamsCache] = useState({ live: null, vod: null, series: null });
 
   const fetchCategories = useCallback(async ({ section, server, profile, bypassCache = false, setImageCacheMap }) => {
     if (!profile || !server) return;
@@ -433,6 +434,56 @@ export function useXCApi({ apiDebug = false } = {}) {
     return null;
   }, [apiDebug, metadataCache]);
 
+  const fetchAllStreams = useCallback(async ({ section, server, profile }) => {
+    if (!profile || !server) return [];
+    
+    // Return cached if available
+    if (globalStreamsCache[section]) {
+        if (apiDebug) console.log(`[API DEBUG] Returning cached global streams for ${section}`);
+        return globalStreamsCache[section];
+    }
+
+    setIsLoading(true);
+    setStatus(`Searching all ${section}... (This may take a moment)`);
+
+    const actionMap = {
+      live: 'get_live_streams',
+      vod: 'get_vod_streams',
+      series: 'get_series'
+    };
+
+    const params = {
+      server,
+      username: profile.username,
+      password: profile.password,
+      action: actionMap[section],
+      // No category_id = fetch all
+    };
+
+    if (apiDebug) console.log(`[API DEBUG] Fetching ALL streams for ${section}`, params);
+
+    try {
+      const result = await window.api.xcApi(params);
+      if (!result.success) {
+        setStatus(`Error searching: ${result.error}`);
+        return [];
+      }
+
+      const data = Array.isArray(result.data) ? result.data : [];
+      if (apiDebug) console.log(`[API DEBUG] Fetched ${data.length} global streams`);
+      
+      setGlobalStreamsCache(prev => ({ ...prev, [section]: data }));
+      setStatus(`Search ready. Found ${data.length} items.`);
+      return data;
+    } catch (e) {
+      console.error(e);
+      setStatus(`Search failed: ${e.message}`);
+      return [];
+    } finally {
+      setIsLoading(false);
+    }
+  }, [apiDebug, globalStreamsCache]);
+
   const backToList = useCallback(() => {
     setSeriesInfo(null);
     setViewMode('list');
@@ -456,6 +507,7 @@ export function useXCApi({ apiDebug = false } = {}) {
     displayCount,
     viewMode,
     activeSeason,
+    globalStreamsCache,
 
     // Setters
     setAllCategories,
@@ -469,6 +521,7 @@ export function useXCApi({ apiDebug = false } = {}) {
     fetchSeriesInfo,
     fetchAccountInfo,
     fetchStreamMetadata,
+    fetchAllStreams,
     backToList,
     clearAccountInfo
   };

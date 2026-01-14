@@ -1,7 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Play, Star } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Play } from 'lucide-react';
 import CachedImage from './CachedImage';
 import StarRating from './StarRating';
+
+// Swiper imports
+import { Swiper, SwiperSlide } from 'swiper/react';
+import { EffectCoverflow, Navigation, Keyboard, Mousewheel } from 'swiper/modules';
+
+// Swiper styles
+import 'swiper/css';
+import 'swiper/css/effect-coverflow';
+import 'swiper/css/navigation';
 
 const INFO_BOX_HEIGHT = 100;
 const METADATA_HEIGHT = 140;
@@ -21,18 +30,16 @@ const FlipBookView = ({
 }) => {
   const [metadata, setMetadata] = useState(null);
   const [isLoadingMeta, setIsLoadingMeta] = useState(false);
+  const swiperRef = useRef(null);
 
   const isLive = sectionType === 'live';
   
   const POSTER_WIDTH = isLive ? 480 : 280;
   const POSTER_HEIGHT = isLive ? 270 : 400;
-  const SIDE_CARD_WIDTH = isLive ? 220 : 160;
-  const SIDE_CARD_HEIGHT = isLive ? 160 : 260;
 
   const currentStream = streams[currentIndex];
-  const prevStream = currentIndex > 0 ? streams[currentIndex - 1] : null;
-  const nextStream = currentIndex < streams.length - 1 ? streams[currentIndex + 1] : null;
 
+  // Fetch metadata when currentIndex changes
   useEffect(() => {
     if (!currentStream) return;
     
@@ -45,7 +52,7 @@ const FlipBookView = ({
       setIsLoadingMeta(false);
     } else {
       setIsLoadingMeta(true);
-      setMetadata(null); // Fade out to clear old backdrop
+      setMetadata(null);
       
       fetchMetadata(currentStream).then(data => {
         if (data) setMetadata(data);
@@ -56,7 +63,7 @@ const FlipBookView = ({
     }
   }, [currentStream, fetchMetadata, sectionType, metadataCache]);
 
-  // Prefetch metadata for next 2 tiles - DEBOUNCED
+  // Prefetch metadata for next 2 tiles
   useEffect(() => {
     if (isLive || !streams.length) return;
 
@@ -69,41 +76,17 @@ const FlipBookView = ({
           const nextId = nextS.stream_id || nextS.series_id || nextS.id;
           const cacheKey = `${sectionType}_${nextId}`;
           
-          // Only fetch if not already in cache
           if (!metadataCache || !metadataCache[cacheKey]) {
-            if (apiDebug) console.log(`[PREFETCH] Index ${nextIdx}: ${nextS.name || nextS.title}`);
             fetchMetadata(nextS).catch(() => {});
           }
         }
       }
-    }, 300); // 300ms debounce
+    }, 300);
 
     return () => clearTimeout(timer);
-  }, [currentIndex, streams, fetchMetadata, isLive, sectionType, metadataCache, apiDebug]);
+  }, [currentIndex, streams, fetchMetadata, isLive, sectionType, metadataCache]);
 
-  const handlePrev = () => {
-    if (currentIndex > 0) {
-      onIndexChange(currentIndex - 1);
-    }
-  };
-
-  const handleNext = () => {
-    if (currentIndex < streams.length - 1) {
-      onIndexChange(currentIndex + 1);
-    }
-  };
-
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'ArrowLeft') handlePrev();
-      if (e.key === 'ArrowRight') handleNext();
-      if (e.key === 'Enter' && currentStream) onPlay(currentStream);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, streams.length, currentStream]);
-
-  if (!currentStream) {
+  if (!streams || streams.length === 0) {
     return (
       <div style={{ 
         display: 'flex', 
@@ -117,7 +100,7 @@ const FlipBookView = ({
     );
   }
 
-  const name = currentStream.name || currentStream.title || 'Unknown';
+  const name = currentStream?.name || currentStream?.title || 'Unknown';
   const plot = metadata?.plot || metadata?.description || '';
   const year = metadata?.releasedate?.split('-')[0] || metadata?.release_date?.split('-')[0] || '';
   const rating = parseFloat(metadata?.rating || 0);
@@ -130,95 +113,6 @@ const FlipBookView = ({
     ? metadata.backdrop_path[0] 
     : (metadata?.backdrop_path || '');
 
-  const BookEnd = ({ side }) => (
-    <div style={{
-      width: SIDE_CARD_WIDTH,
-      height: SIDE_CARD_HEIGHT,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      flexShrink: 0
-    }}>
-      <div style={{
-        width: '24px',
-        height: isLive ? '120px' : '180px',
-        background: 'linear-gradient(to bottom, #3c3f44, #2c2e33)',
-        borderRadius: side === 'left' ? '4px 0 0 4px' : '0 4px 4px 0',
-        boxShadow: side === 'left' ? '2px 0 8px rgba(0,0,0,0.5)' : '-2px 0 8px rgba(0,0,0,0.5)'
-      }} />
-    </div>
-  );
-
-  const SideCard = ({ stream, side }) => {
-    if (!stream) {
-      return <BookEnd side={side} />;
-    }
-    
-    const logo = stream.stream_icon || stream.cover;
-    const streamName = stream.name || stream.title;
-    
-    return (
-      <div 
-        style={{
-          width: SIDE_CARD_WIDTH,
-          height: SIDE_CARD_HEIGHT,
-          background: '#25262b',
-          borderRadius: '8px',
-          overflow: 'hidden',
-          opacity: 0.6,
-          transform: `perspective(800px) rotateY(${side === 'left' ? '25deg' : '-25deg'})`,
-          transformOrigin: side === 'left' ? 'right center' : 'left center',
-          cursor: 'pointer',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-          flexShrink: 0,
-          zIndex: 2
-        }}
-        onClick={() => side === 'left' ? handlePrev() : handleNext()}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.opacity = '0.8';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.opacity = '0.6';
-        }}
-      >
-        <div style={{ 
-          width: '100%', 
-          height: SIDE_CARD_HEIGHT - 40, 
-          background: '#1a1b1e',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <CachedImage
-            src={logo}
-            alt={streamName}
-            style={{ 
-              width: '100%', 
-              height: '100%', 
-              objectFit: 'contain'
-            }}
-            profileId={profileId}
-            cacheMap={cacheMap}
-            apiDebug={apiDebug}
-          />
-        </div>
-        <div style={{ 
-          height: '40px',
-          padding: '6px 8px', 
-          fontSize: '0.7rem', 
-          color: '#909296',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'flex',
-          alignItems: 'center'
-        }}>
-          {streamName}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div style={{
       display: 'flex',
@@ -229,7 +123,7 @@ const FlipBookView = ({
       overflow: 'hidden',
       position: 'relative'
     }}>
-      {/* Backdrop Image Container - Always in DOM for smooth transitions */}
+      {/* Backdrop Image Container */}
       <div style={{
         position: 'absolute',
         top: 0,
@@ -285,22 +179,25 @@ const FlipBookView = ({
         <span> / {streams.length}</span>
       </div>
 
-      {/* Carousel Container - Fixed Height */}
+      {/* Swiper Container */}
       <div style={{
+        flex: 1,
+        width: '100%',
+        position: 'relative',
+        zIndex: 2,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '25px',
-        flexShrink: 0,
-        height: POSTER_HEIGHT + INFO_BOX_HEIGHT + 20,
-        overflow: 'visible',
-        zIndex: 2
+        overflow: 'visible'
       }}>
-        {/* Left Arrow */}
+        {/* Navigation Buttons */}
         <button
-          onClick={handlePrev}
-          disabled={currentIndex === 0}
+          className="swiper-prev-btn"
           style={{
+            position: 'absolute',
+            left: '20px',
+            top: '50%',
+            transform: 'translateY(-50%)',
             background: currentIndex === 0 ? '#2c2e33' : sectionColor,
             border: 'none',
             borderRadius: '50%',
@@ -311,161 +208,19 @@ const FlipBookView = ({
             justifyContent: 'center',
             cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
             opacity: currentIndex === 0 ? 0.3 : 1,
-            flexShrink: 0,
-            zIndex: 3
+            zIndex: 10
           }}
         >
           <ChevronLeft size={28} color={currentIndex === 0 ? '#666' : '#000'} />
         </button>
 
-        {/* Cards Container */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'center',
-          gap: '25px',
-          zIndex: 2
-        }}>
-          {/* Previous Card */}
-          <SideCard stream={prevStream} side="left" />
-
-          {/* Center Card - Featured */}
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '0',
-            flexShrink: 0,
-            zIndex: 4
-          }}>
-            {/* Poster Container - Fixed Size */}
-            <div 
-              style={{
-                width: POSTER_WIDTH,
-                height: POSTER_HEIGHT,
-                background: '#1a1b1e',
-                borderRadius: '12px 12px 0 0',
-                overflow: 'hidden',
-                boxShadow: `0 -4px 20px rgba(0,0,0,0.4), 0 0 0 2px ${sectionColor}`,
-                cursor: 'pointer',
-                position: 'relative',
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-              onDoubleClick={() => onPlay(currentStream)}
-            >
-              <CachedImage
-                src={currentStream.stream_icon || currentStream.cover}
-                alt={name}
-                style={{ 
-                  maxWidth: '100%', 
-                  maxHeight: '100%', 
-                  objectFit: 'contain'
-                }}
-                profileId={profileId}
-                cacheMap={cacheMap}
-                apiDebug={apiDebug}
-              />
-              {/* Play overlay */}
-              <div 
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: 'rgba(0,0,0,0.4)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: 0,
-                  transition: 'opacity 0.2s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
-                onClick={() => onPlay(currentStream)}
-              >
-                <div style={{
-                  width: '70px',
-                  height: '70px',
-                  borderRadius: '50%',
-                  background: sectionColor,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
-                }}>
-                  <Play size={36} color="#000" fill="#000" />
-                </div>
-              </div>
-            </div>
-            
-            {/* Info Box - Fixed Size */}
-            <div style={{ 
-              width: POSTER_WIDTH,
-              height: INFO_BOX_HEIGHT,
-              background: '#2c2e33',
-              borderRadius: '0 0 12px 12px',
-              padding: '12px 15px',
-              boxShadow: `0 4px 20px rgba(0,0,0,0.4), 0 0 0 2px ${sectionColor}`,
-              boxSizing: 'border-box',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              flexShrink: 0,
-              zIndex: 4
-            }}>
-              {/* Title */}
-              <div style={{ 
-                fontSize: '1.1rem', 
-                fontWeight: 'bold', 
-                color: '#fff',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}>
-                {name}
-              </div>
-              
-              {/* Rating & Year Row */}
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between'
-              }}>
-                {!isLive && <StarRating rating={rating} size={14} />}
-                {isLive && <div />}
-                <div style={{ display: 'flex', gap: '10px', color: '#909296', fontSize: '0.85rem' }}>
-                  {year && <span>{year}</span>}
-                  {duration && <span>{duration}</span>}
-                </div>
-              </div>
-              
-              {/* Genre */}
-              <div style={{ 
-                fontSize: '0.8rem', 
-                color: sectionColor,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                minHeight: '18px'
-              }}>
-                {genre || '\u00A0'}
-              </div>
-            </div>
-          </div>
-
-          {/* Next Card */}
-          <SideCard stream={nextStream} side="right" />
-        </div>
-
-        {/* Right Arrow */}
         <button
-          onClick={handleNext}
-          disabled={currentIndex === streams.length - 1}
+          className="swiper-next-btn"
           style={{
+            position: 'absolute',
+            right: '20px',
+            top: '50%',
+            transform: 'translateY(-50%)',
             background: currentIndex === streams.length - 1 ? '#2c2e33' : sectionColor,
             border: 'none',
             borderRadius: '50%',
@@ -476,15 +231,186 @@ const FlipBookView = ({
             justifyContent: 'center',
             cursor: currentIndex === streams.length - 1 ? 'not-allowed' : 'pointer',
             opacity: currentIndex === streams.length - 1 ? 0.3 : 1,
-            flexShrink: 0,
-            zIndex: 3
+            zIndex: 10
           }}
         >
           <ChevronRight size={28} color={currentIndex === streams.length - 1 ? '#666' : '#000'} />
         </button>
+
+        <Swiper
+          effect={'coverflow'}
+          grabCursor={true}
+          centeredSlides={true}
+          slidesPerView={'auto'}
+          initialSlide={currentIndex}
+          coverflowEffect={{
+            rotate: 30,
+            stretch: 0,
+            depth: 200,
+            modifier: 1,
+            slideShadows: true,
+          }}
+          navigation={{
+            prevEl: '.swiper-prev-btn',
+            nextEl: '.swiper-next-btn',
+          }}
+          keyboard={{
+            enabled: true,
+          }}
+          mousewheel={true}
+          modules={[EffectCoverflow, Navigation, Keyboard, Mousewheel]}
+          onSlideChange={(swiper) => onIndexChange(swiper.activeIndex)}
+          onSwiper={(swiper) => {
+            swiperRef.current = swiper;
+          }}
+          style={{
+            width: '100%',
+            paddingTop: '50px',
+            paddingBottom: '50px',
+            overflow: 'visible'
+          }}
+        >
+          {streams.map((stream, index) => (
+            <SwiperSlide 
+              key={stream.stream_id || stream.series_id || stream.id || index}
+              style={{
+                width: POSTER_WIDTH,
+                backgroundPosition: 'center',
+                backgroundSize: 'cover',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                filter: index === currentIndex ? 'none' : 'brightness(0.5)',
+                transition: 'filter 0.3s'
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '0',
+                width: '100%'
+              }}>
+                {/* Poster Container */}
+                <div 
+                  style={{
+                    width: POSTER_WIDTH,
+                    height: POSTER_HEIGHT,
+                    background: '#1a1b1e',
+                    borderRadius: '12px 12px 0 0',
+                    overflow: 'hidden',
+                    boxShadow: index === currentIndex ? `0 -4px 20px rgba(0,0,0,0.4), 0 0 0 2px ${sectionColor}` : '0 -4px 10px rgba(0,0,0,0.3)',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  onDoubleClick={() => onPlay(stream)}
+                >
+                  <CachedImage
+                    src={stream.stream_icon || stream.cover}
+                    alt={stream.name || stream.title}
+                    style={{ 
+                      maxWidth: '100%', 
+                      maxHeight: '100%', 
+                      objectFit: 'contain'
+                    }}
+                    profileId={profileId}
+                    cacheMap={cacheMap}
+                    apiDebug={apiDebug}
+                  />
+                  {/* Play overlay */}
+                  {index === currentIndex && (
+                    <div 
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0,0,0,0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        opacity: 0,
+                        transition: 'opacity 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
+                      onClick={() => onPlay(stream)}
+                    >
+                      <div style={{
+                        width: '70px',
+                        height: '70px',
+                        borderRadius: '50%',
+                        background: sectionColor,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
+                      }}>
+                        <Play size={36} color="#000" fill="#000" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Info Box */}
+                <div style={{ 
+                  width: POSTER_WIDTH,
+                  height: INFO_BOX_HEIGHT,
+                  background: '#2c2e33',
+                  borderRadius: '0 0 12px 12px',
+                  padding: '12px 15px',
+                  boxShadow: index === currentIndex ? `0 4px 20px rgba(0,0,0,0.4), 0 0 0 2px ${sectionColor}` : '0 4px 10px rgba(0,0,0,0.3)',
+                  boxSizing: 'border-box',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between'
+                }}>
+                  <div style={{ 
+                    fontSize: '1.1rem', 
+                    fontWeight: 'bold', 
+                    color: '#fff',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {stream.name || stream.title}
+                  </div>
+                  
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between'
+                  }}>
+                    {!isLive && index === currentIndex && <StarRating rating={rating} size={14} />}
+                    {(!index === currentIndex || isLive) && <div />}
+                    <div style={{ display: 'flex', gap: '10px', color: '#909296', fontSize: '0.85rem' }}>
+                      {index === currentIndex && year && <span>{year}</span>}
+                      {index === currentIndex && duration && <span>{duration}</span>}
+                    </div>
+                  </div>
+                  
+                  <div style={{ 
+                    fontSize: '0.8rem', 
+                    color: sectionColor,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    minHeight: '18px'
+                  }}>
+                    {index === currentIndex ? (genre || '\u00A0') : '\u00A0'}
+                  </div>
+                </div>
+              </div>
+            </SwiperSlide>
+          ))}
+        </Swiper>
       </div>
 
-      {/* Metadata Panel - Fixed Height, Expands Horizontally */}
+      {/* Metadata Panel */}
       {!isLive && (
         <div style={{
           display: 'flex',
@@ -521,7 +447,6 @@ const FlipBookView = ({
               </div>
             ) : (
               <>
-                {/* Director & Cast Row - Fixed Height */}
                 <div style={{ 
                   display: 'flex',
                   gap: '20px',
@@ -559,7 +484,6 @@ const FlipBookView = ({
                   )}
                 </div>
                 
-                {/* Plot - Scrollable within fixed height */}
                 <div style={{ 
                   flex: '1 1 auto',
                   overflow: 'auto',
@@ -599,10 +523,11 @@ const FlipBookView = ({
         flexShrink: 0,
         zIndex: 2
       }}>
-        ← → arrow keys to navigate • Double-click to play
+        ← → arrow keys or mouse wheel to navigate • Double-click to play
       </div>
     </div>
   );
 };
 
 export default FlipBookView;
+
