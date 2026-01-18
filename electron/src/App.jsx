@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { RefreshCw, X } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { RefreshCw } from 'lucide-react';
 import VideoPlayer from './components/VideoPlayer';
 import CachedImage from './components/CachedImage';
 import ProfileManager from './components/ProfileManager';
@@ -12,6 +12,9 @@ import Sidebar from './components/Sidebar';
 import ContextMenu from './components/ContextMenu';
 import TranscoderSettingsModal from './components/TranscoderSettingsModal';
 import StressTestMonitor from './components/StressTestMonitor';
+import SpeedTestModal from './components/SpeedTestModal';
+
+// Hooks
 import { useXCApi } from './hooks/useXCApi';
 import { useDownloadManager } from './hooks/useDownloadManager';
 import { useFavorites } from './hooks/useFavorites';
@@ -20,214 +23,126 @@ import { useGroupedCategories } from './hooks/useGroupedCategories';
 import { useChromecast } from './hooks/useChromecast';
 import { useSettings } from './hooks/useSettings';
 import { usePlayer } from './hooks/usePlayer';
+import { useUIState } from './hooks/useUIState';
+import { useSearchState } from './hooks/useSearchState';
+import { useContextMenu } from './hooks/useContextMenu';
+import { useTestModes } from './hooks/useTestModes';
+
 import { getXcUrl, getXcLogoUrl } from './utils/xc';
 
 function App() {
+  // Core Profile/Server State
   const [currentProfile, setCurrentProfile] = useState(null);
   const [selectedServer, setSelectedServer] = useState('');
   const [showProfiles, setShowProfiles] = useState(false);
   const [apiDebug, setApiDebug] = useState(true);
-
-  const [selectedSection, setSelectedSection] = useState('live');
+  const [selectedSection, setSelectedSection] = useState('vod');
   const [selectedCategory, setSelectedCategory] = useState(null);
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [englishOnly, setEnglishOnly] = useState(false);
   const [playerMode, setPlayerMode] = useState('vlc');
-
-  const [expandedGroups, setExpandedGroups] = useState({});
-  const [tileSize, setTileSize] = useState(200);
-  const [contextMenu, setContextMenu] = useState(null);
-  const [imageCacheMap, setImageCacheMap] = useState({});
-  const [showPlot, setShowPlot] = useState(false);
-  const [yearFilter, setYearFilter] = useState('none');
-  const [sortByYear, setSortByYear] = useState(false);
-  const [showDownloadManager, setShowDownloadManager] = useState(false);
   const [lastCategoryClick, setLastCategoryClick] = useState({ id: null, timestamp: 0 });
-  const [flipBookMode, setFlipBookMode] = useState(false);
-  const [flipBookIndex, setFlipBookIndex] = useState(0);
-  const [showTranscoderSettings, setShowTranscoderSettings] = useState(false);
-  const [stressTestMode, setStressTestMode] = useState(false);
-  const [showStressTestMonitor, setShowStressTestMonitor] = useState(false);
-  const [stressTestStreamUrl, setStressTestStreamUrl] = useState(null);
 
-  // Use the XC API hook
+  // Custom Hooks
+  const uiState = useUIState();
+  const searchState = useSearchState();
+  const testModes = useTestModes();
   const xcApi = useXCApi({ apiDebug });
-
-  const {
-    allCategories,
-    streams,
-    seriesInfo,
-    accountInfo,
-    metadataCache,
-    isLoading,
-    status,
-    isRendering,
-    displayCount,
-    viewMode,
-    activeSeason,
-    globalStreamsCache,
-    setStreams,
-    setDisplayCount,
-    setStatus,
-    fetchCategories: fetchCategoriesFromHook,
-    fetchStreams: fetchStreamsFromHook,
-    fetchSeriesInfo: fetchSeriesInfoFromHook,
-    fetchAccountInfo: fetchAccountInfoFromHook,
-    fetchStreamMetadata: fetchStreamMetadataFromHook,
-    fetchAllStreams,
-    backToList,
-    clearAccountInfo
+  
+  // Destructure for easier access
+  const { 
+    streams, seriesInfo, accountInfo, metadataCache, isLoading, status, isRendering, displayCount, viewMode, globalStreamsCache,
+    setStreams, setDisplayCount, setStatus, fetchCategories: fetchCats, fetchStreams: fetchStrms, 
+    fetchSeriesInfo: fetchSeries, fetchAccountInfo: fetchAcct, fetchStreamMetadata: fetchMeta, 
+    fetchAllStreams, backToList, clearAccountInfo 
   } = xcApi;
 
-  // Use Favorites hook
-  const {
-    favorites,
-    toggleFavorite
-  } = useFavorites({ currentProfile });
+  const { favorites, toggleFavorite } = useFavorites({ currentProfile });
+  
+  const { 
+    downloads, startDownload: handleDownload, cancelDownload, removeDownload, moveDownload 
+  } = useDownloadManager({ currentProfile, selectedSection, selectedServer, setShowDownloadManager: uiState.setShowDownloadManager });
 
-  // Use Download Manager hook
-  const {
-    downloads,
-    startDownload: handleDownload,
-    cancelDownload,
-    removeDownload,
-    moveDownload
-  } = useDownloadManager({
-    currentProfile,
-    selectedSection,
-    selectedServer,
-    setShowDownloadManager
-  });
-
-  // Use Chromecast hook
-  const {
-    castDevices,
-    selectedCastDevice,
-    setSelectedCastDevice,
-    availableIps,
-    selectedProxyIp,
-    setSelectedProxyIp,
-    transcoderSettings,
-    setTranscoderSettings
+  const { 
+    castDevices, selectedCastDevice, setSelectedCastDevice, availableIps, selectedProxyIp, setSelectedProxyIp, 
+    transcoderSettings, setTranscoderSettings 
   } = useChromecast();
 
-  // Use Settings hook
-  const {
-    ffmpegPath,
-    loadSettings,
-    handleVlcPathChange,
-    handleFfmpegPathChange
+  const { 
+    ffmpegPath, loadSettings, handleVlcPathChange, handleFfmpegPathChange 
   } = useSettings({ setStatus });
 
-  // Determine which streams to filter: Global Cache (if searching) or Category Streams
-  const streamsToFilter = (searchQuery.length > 2 && globalStreamsCache[selectedSection]) 
+  // Context Menu Hook
+  const { contextMenu, handleContextMenu, handleCloseContextMenu } = useContextMenu({
+    selectedSection, selectedServer, currentProfile, apiDebug
+  });
+
+  // Derived State
+  const streamsToFilter = (searchState.searchQuery.length > 2 && globalStreamsCache[selectedSection]) 
     ? globalStreamsCache[selectedSection] 
     : streams;
 
-  // Use Filtered Streams hook
   const { visibleStreams, totalFilteredCount } = useFilteredStreams({
     streams: streamsToFilter,
-    searchQuery,
-    englishOnly,
-    yearFilter,
-    sortByYear,
+    searchQuery: searchState.searchQuery,
+    englishOnly: searchState.englishOnly,
+    yearFilter: searchState.yearFilter,
+    sortByYear: searchState.sortByYear,
     displayCount
   });
 
-  // Use Grouped Categories hook
   const groupedCategories = useGroupedCategories({
-    allCategories,
+    allCategories: xcApi.allCategories,
     selectedSection,
-    searchQuery,
-    englishOnly
+    searchQuery: searchState.searchQuery,
+    englishOnly: searchState.englishOnly
   });
 
-  // Wrapper functions that pass current context
+  // --- Callbacks Wrappers ---
   const fetchCategories = useCallback((section = selectedSection, bypassCache = false) => {
-    fetchCategoriesFromHook({
-      section,
-      server: selectedServer,
-      profile: currentProfile,
-      bypassCache,
-      setImageCacheMap
-    });
-  }, [fetchCategoriesFromHook, selectedServer, currentProfile, selectedSection]);
+    fetchCats({ section, server: selectedServer, profile: currentProfile, bypassCache, setImageCacheMap: uiState.setImageCacheMap });
+  }, [fetchCats, selectedServer, currentProfile, selectedSection, uiState.setImageCacheMap]);
 
   const fetchStreams = useCallback((catId, bypassCache = false) => {
-    fetchStreamsFromHook({
-      catId,
-      section: selectedSection,
-      server: selectedServer,
-      profile: currentProfile,
-      bypassCache,
-      favorites,
-      setImageCacheMap
-    });
-  }, [fetchStreamsFromHook, selectedSection, selectedServer, currentProfile, favorites]);
+    fetchStrms({ catId, section: selectedSection, server: selectedServer, profile: currentProfile, bypassCache, favorites, setImageCacheMap: uiState.setImageCacheMap });
+  }, [fetchStrms, selectedSection, selectedServer, currentProfile, favorites, uiState.setImageCacheMap]);
 
   const fetchSeriesInfo = useCallback((seriesId) => {
-    fetchSeriesInfoFromHook({
-      seriesId,
-      server: selectedServer,
-      profile: currentProfile,
-      setImageCacheMap
-    });
-  }, [fetchSeriesInfoFromHook, selectedServer, currentProfile]);
+    fetchSeries({ seriesId, server: selectedServer, profile: currentProfile, setImageCacheMap: uiState.setImageCacheMap });
+  }, [fetchSeries, selectedServer, currentProfile, uiState.setImageCacheMap]);
 
   const fetchAccountInfo = useCallback(() => {
-    fetchAccountInfoFromHook({
-      server: selectedServer,
-      profile: currentProfile
-    });
-  }, [fetchAccountInfoFromHook, selectedServer, currentProfile]);
+    fetchAcct({ server: selectedServer, profile: currentProfile });
+  }, [fetchAcct, selectedServer, currentProfile]);
 
   const fetchStreamMetadata = useCallback((stream) => {
-    return fetchStreamMetadataFromHook({
-      stream,
-      section: selectedSection,
-      server: selectedServer,
-      profile: currentProfile,
-      setImageCacheMap
-    });
-  }, [fetchStreamMetadataFromHook, selectedSection, selectedServer, currentProfile, setImageCacheMap]);
+    return fetchMeta({ stream, section: selectedSection, server: selectedServer, profile: currentProfile, setImageCacheMap: uiState.setImageCacheMap });
+  }, [fetchMeta, selectedSection, selectedServer, currentProfile, uiState.setImageCacheMap]);
 
-  // Use Player hook
-  const {
-    currentStream,
-    playStream: playStreamOriginal,
-    closePlayer
-  } = usePlayer({
-    playerMode,
-    selectedCastDevice,
-    selectedSection,
-    currentProfile,
-    selectedServer,
-    selectedProxyIp,
-    transcoderSettings,
-    ffmpegPath,
-    fetchSeriesInfo
+  // Player Hook
+  const { currentStream, playStream: playStreamOriginal, closePlayer } = usePlayer({
+    playerMode, selectedCastDevice, selectedSection, currentProfile, selectedServer, selectedProxyIp, transcoderSettings, ffmpegPath, fetchSeriesInfo
   });
 
+  // Play Interception Logic
   const playStream = (stream, type) => {
-    if (stressTestMode) {
-      // Build stream URL similar to how usePlayer/playStream does it, but we need it here.
-      // Actually usePlayer handles constructing the URL from the stream object. 
-      // It's better if we just use the logic from usePlayer but for getting the URL. 
-      // However, duplication is bad.
-      // Let's see if we can just get the URL.
-      // For now, let's construct it manually since it's standard XC.
+    if (testModes.speedTestMode) {
+      if (selectedSection === 'live') {
+        setStatus("Speed test only supports VOD and Series.");
+        return;
+      }
+      testModes.setSpeedTestTarget(stream);
+      testModes.setShowSpeedTestModal(true);
+      return;
+    }
+
+    if (testModes.stressTestMode) {
       const id = stream.stream_id || stream.series_id || stream.id;
-      const container = stream.container_extension || 'ts'; // Default to ts
-      // Live/VOD logic
+      const container = stream.container_extension || 'ts';
       let finalUrl = '';
       if (selectedSection === 'live') {
           finalUrl = `${selectedServer}/live/${currentProfile.username}/${currentProfile.password}/${id}.ts`;
       } else if (selectedSection === 'vod') {
           finalUrl = `${selectedServer}/movie/${currentProfile.username}/${currentProfile.password}/${id}.${container}`;
       } else {
-        // Series logic usually complicated (needs episode).
-        // If type is 'episode', stream is an episode object.
         if (type === 'episode' || stream.episode_num) {
             finalUrl = `${selectedServer}/series/${currentProfile.username}/${currentProfile.password}/${id}.${container}`;
         } else {
@@ -235,23 +150,29 @@ function App() {
             return;
         }
       }
-
-      setStressTestStreamUrl(finalUrl);
-      setShowStressTestMonitor(true);
+      testModes.setStressTestStreamUrl(finalUrl);
+      testModes.setShowStressTestMonitor(true);
     } else {
       playStreamOriginal(stream, type);
     }
   };
 
   // --- Effects ---
-
   useEffect(() => {
     const init = async () => {
         const config = await loadSettings();
+        console.log('[App] Loaded config:', config);
         if (config.profiles?.length > 0) {
             const active = config.profiles.find(p => p.id === config.activeProfileId) || config.profiles[0];
+            console.log('[App] Active Profile:', active);
             setCurrentProfile(active);
-            if (active.servers?.length > 0) setSelectedServer(active.servers[0]);
+            if (active.defaultServerUrl && active.servers?.includes(active.defaultServerUrl)) {
+                console.log('[App] Selecting DEFAULT server:', active.defaultServerUrl);
+                setSelectedServer(active.defaultServerUrl);
+            } else if (active.servers?.length > 0) {
+                console.log('[App] Selecting FIRST server (fallback):', active.servers[0]);
+                setSelectedServer(active.servers[0]);
+            }
         } else {
             setShowProfiles(true);
         }
@@ -261,30 +182,22 @@ function App() {
 
   useEffect(() => {
     if (currentProfile && selectedServer) {
-        // Fetch Categories
-        fetchCategories('live');
-        fetchCategories('vod');
-        fetchCategories('series');
-
-        // Fetch All Streams (Background Cache)
+        fetchCategories('live'); fetchCategories('vod'); fetchCategories('series');
         fetchAllStreams({ section: 'live', server: selectedServer, profile: currentProfile });
         fetchAllStreams({ section: 'vod', server: selectedServer, profile: currentProfile });
         fetchAllStreams({ section: 'series', server: selectedServer, profile: currentProfile });
     }
   }, [currentProfile?.id, selectedServer]);
 
-  // Reset displayCount and flipBookIndex when filters or sort changes
   useEffect(() => {
     setDisplayCount(100);
-    setFlipBookIndex(0);
-  }, [searchQuery, yearFilter, englishOnly, sortByYear, setDisplayCount]);
+    uiState.setFlipBookIndex(0);
+  }, [searchState.searchQuery, searchState.yearFilter, searchState.englishOnly, searchState.sortByYear, setDisplayCount, uiState.setFlipBookIndex]);
 
-  // Reset flipBookIndex when streams change (new category selected)
   useEffect(() => {
-    setFlipBookIndex(0);
-  }, [streams]);
+    uiState.setFlipBookIndex(0);
+  }, [streams, uiState.setFlipBookIndex]);
 
-  // Progressive loading
   useEffect(() => {
     if (streams.length > displayCount && !isRendering) {
       const timer = setTimeout(() => {
@@ -300,17 +213,13 @@ function App() {
     const now = Date.now();
     const isSameCategory = selectedCategory === catId;
     const isWithinOneSecond = now - lastCategoryClick.timestamp < 1000;
-    
     setLastCategoryClick({ id: catId, timestamp: now });
 
-    // Handle cache-bypassing refresh (double click)
     if (isSameCategory && isWithinOneSecond) {
         if (apiDebug) console.log(`[REFRESH] Double-click detected for category ${catId}. Purging cache...`);
         fetchStreams(catId, true);
         return;
     }
-
-    // Handle new category selection
     if (!isSameCategory) {
         setSelectedCategory(catId);
         xcApi.setStreams([]);
@@ -318,55 +227,8 @@ function App() {
         fetchStreams(catId, false);
         return;
     }
-
-    // Normal click on already selected category
     fetchStreams(catId, false);
   };
-
-  const handleCloseContextMenu = () => setContextMenu(null);
-  
-  const handleContextMenu = useCallback(async (e, stream) => {
-    e.preventDefault();
-    const id = stream.stream_id || stream.series_id || stream.id;
-    const isEpisode = !!stream.episode_num;
-    setContextMenu({ mouseX: e.clientX, mouseY: e.clientY, stream, isLoading: !isEpisode });
-
-    if (isEpisode) {
-        setContextMenu(prev => ({ ...prev, info: stream.info || stream, rawData: stream, isLoading: false }));
-        return;
-    }
-
-    if (selectedSection === 'vod' || selectedSection === 'series') {
-        const action = selectedSection === 'vod' ? 'get_vod_info' : 'get_series_info';
-        const paramKey = selectedSection === 'vod' ? 'vod_id' : 'series_id';
-        
-        const params = {
-            server: selectedServer,
-            username: currentProfile.username,
-            password: currentProfile.password,
-            action,
-            extraParams: { [paramKey]: id }
-        };
-
-        if (apiDebug) console.log(`[API DEBUG] Calling ${action} for ID ${id}`, params);
-
-        try {
-            const result = await window.api.xcApi(params);
-            if (result.success) {
-                if (apiDebug) console.log(`[API DEBUG] ${action} Result ${result.fromCache ? '(FROM CACHE)' : '(FRESH)'}:`, result.data);
-                setContextMenu(prev => ({ ...prev, info: result.data.info, rawData: result.data, isLoading: false }));
-            } else {
-                if (apiDebug) console.error(`[API DEBUG] ${action} Error:`, result.error);
-                setContextMenu(prev => ({ ...prev, isLoading: false }));
-            }
-        } catch (err) {
-            if (apiDebug) console.error(`[API DEBUG] ${action} Exception:`, err);
-            setContextMenu(prev => ({ ...prev, isLoading: false }));
-        }
-    } else {
-        setContextMenu(prev => ({ ...prev, isLoading: false }));
-    }
-  }, [selectedSection, selectedServer, currentProfile, apiDebug]);
 
   const copyToClipboard = (text) => {
     if (text) {
@@ -398,19 +260,38 @@ function App() {
         setStreams={setStreams}
         backToList={backToList}
         setLastCategoryClick={setLastCategoryClick}
-        flipBookMode={flipBookMode}
-        setFlipBookMode={setFlipBookMode}
-        setFlipBookIndex={setFlipBookIndex}
-        showPlot={showPlot}
-        setShowPlot={setShowPlot}
+        
+        // UI State Props
+        flipBookMode={uiState.flipBookMode}
+        setFlipBookMode={uiState.setFlipBookMode}
+        setFlipBookIndex={uiState.setFlipBookIndex}
+        showPlot={uiState.showPlot}
+        setShowPlot={uiState.setShowPlot}
+        tileSize={uiState.tileSize}
+        setTileSize={uiState.setTileSize}
+        showDownloadManager={uiState.showDownloadManager}
+        setShowDownloadManager={uiState.setShowDownloadManager}
+        
+        // Search Props
+        searchQuery={searchState.searchQuery}
+        setSearchQuery={searchState.setSearchQuery}
+        englishOnly={searchState.englishOnly}
+        setEnglishOnly={searchState.setEnglishOnly}
+        yearFilter={searchState.yearFilter}
+        setYearFilter={searchState.setYearFilter}
+        sortByYear={searchState.sortByYear}
+        setSortByYear={searchState.setSortByYear}
+
+        // Test Modes
+        stressTestMode={testModes.stressTestMode}
+        setStressTestMode={testModes.setStressTestMode}
+        speedTestMode={testModes.speedTestMode}
+        setSpeedTestMode={testModes.setSpeedTestMode}
+
         downloads={downloads}
-        setShowDownloadManager={setShowDownloadManager}
-        showDownloadManager={showDownloadManager}
         apiDebug={apiDebug}
         setApiDebug={setApiDebug}
         setStatus={setStatus}
-        tileSize={tileSize}
-        setTileSize={setTileSize}
         playerMode={playerMode}
         setPlayerMode={setPlayerMode}
         handleVlcPathChange={handleVlcPathChange}
@@ -420,20 +301,10 @@ function App() {
         availableIps={availableIps}
         selectedProxyIp={selectedProxyIp}
         setSelectedProxyIp={setSelectedProxyIp}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        englishOnly={englishOnly}
-        setEnglishOnly={setEnglishOnly}
-        sortByYear={sortByYear}
-        setSortByYear={setSortByYear}
-        yearFilter={yearFilter}
-        setYearFilter={setYearFilter}
         handleFfmpegPathChange={handleFfmpegPathChange}
         ffmpegPath={ffmpegPath}
         transcoderSettings={transcoderSettings}
-        setShowTranscoderSettings={setShowTranscoderSettings}
-        stressTestMode={stressTestMode}
-        setStressTestMode={setStressTestMode}
+        setShowTranscoderSettings={uiState.setShowTranscoderSettings}
       />
 
       <div className="main-content">
@@ -441,21 +312,21 @@ function App() {
         
         <Sidebar 
           groupedCategories={groupedCategories}
-          expandedGroups={expandedGroups}
-          setExpandedGroups={setExpandedGroups}
+          expandedGroups={uiState.expandedGroups}
+          setExpandedGroups={uiState.setExpandedGroups}
           selectedCategory={selectedCategory}
           handleCategoryClick={handleCategoryClick}
         />
 
         <div className="content-area">
-          {flipBookMode && viewMode !== 'details' ? (
+          {uiState.flipBookMode && viewMode !== 'details' ? (
             <FlipBookView
               streams={visibleStreams}
-              currentIndex={flipBookIndex}
-              onIndexChange={setFlipBookIndex}
+              currentIndex={uiState.flipBookIndex}
+              onIndexChange={uiState.setFlipBookIndex}
               onPlay={playStream}
               profileId={currentProfile?.id}
-              cacheMap={imageCacheMap}
+              cacheMap={uiState.imageCacheMap}
               apiDebug={apiDebug}
               fetchMetadata={fetchStreamMetadata}
               metadataCache={metadataCache}
@@ -468,37 +339,20 @@ function App() {
               {viewMode === 'details' && seriesInfo?.info?.backdrop_path && (
                 <>
                   <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    zIndex: 0,
-                    overflow: 'hidden'
+                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0, overflow: 'hidden'
                   }}>
                     <CachedImage
                       src={Array.isArray(seriesInfo.info.backdrop_path) ? seriesInfo.info.backdrop_path[0] : seriesInfo.info.backdrop_path}
                       alt="Backdrop"
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        opacity: 0.3,
-                        filter: 'blur(3px)'
-                      }}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.3, filter: 'blur(3px)' }}
                       profileId={currentProfile?.id}
-                      cacheMap={imageCacheMap}
+                      cacheMap={uiState.imageCacheMap}
                       apiDebug={apiDebug}
                     />
                   </div>
                   <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: 'radial-gradient(circle, transparent 0%, var(--bg-primary) 100%)',
-                    zIndex: 1
+                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'radial-gradient(circle, transparent 0%, var(--bg-primary) 100%)', zIndex: 1
                   }} />
                 </>
               )}
@@ -517,7 +371,7 @@ function App() {
                 )}
               </div>
 
-              <div className="stream-list" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`, position: 'relative', zIndex: 2 }}>
+              <div className="stream-list" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${uiState.tileSize}px, 1fr))`, position: 'relative', zIndex: 2 }}>
                 {viewMode === 'details' ? (
                     Object.keys(seriesInfo?.episodes || {}).sort((a,b) => parseInt(a)-parseInt(b)).map(seasonNum => (
                         <React.Fragment key={`season-${seasonNum}`}>
@@ -529,7 +383,7 @@ function App() {
                                                                 alt={ep.title}
                                                                 className="stream-logo"
                                                                 profileId={currentProfile?.id}
-                                                                cacheMap={imageCacheMap}
+                                                                cacheMap={uiState.imageCacheMap}
                                                                 apiDebug={apiDebug}
                                                             />
                                                             <div className="stream-name">E{ep.episode_num}: {ep.title}</div>
@@ -544,11 +398,11 @@ function App() {
                             <StreamCard
                                 key={id}
                                 stream={s}
-                                showPlot={showPlot}
+                                showPlot={uiState.showPlot}
                                 onDoubleClick={() => playStream(s)}
                                 onContextMenu={(e) => handleContextMenu(e, s)}
                                 profileId={currentProfile?.id}
-                                cacheMap={imageCacheMap}
+                                cacheMap={uiState.imageCacheMap}
                                 apiDebug={apiDebug}
                                 fetchMetadata={fetchStreamMetadata}
                                 metadataCache={metadataCache}
@@ -571,17 +425,26 @@ function App() {
       <AccountModal accountInfo={accountInfo} clearAccountInfo={clearAccountInfo} />
 
       <TranscoderSettingsModal 
-        isOpen={showTranscoderSettings} 
-        onClose={() => setShowTranscoderSettings(false)}
+        isOpen={uiState.showTranscoderSettings} 
+        onClose={() => uiState.setShowTranscoderSettings(false)}
         settings={transcoderSettings}
         onSave={setTranscoderSettings}
       />
 
       <StressTestMonitor 
-        isOpen={showStressTestMonitor}
-        onClose={() => setShowStressTestMonitor(false)}
-        streamUrl={stressTestStreamUrl}
+        isOpen={testModes.showStressTestMonitor}
+        onClose={() => testModes.setShowStressTestMonitor(false)}
+        streamUrl={testModes.stressTestStreamUrl}
         settings={transcoderSettings}
+      />
+
+      <SpeedTestModal 
+        isOpen={testModes.showSpeedTestModal}
+        onClose={() => testModes.setShowSpeedTestModal(false)}
+        stream={testModes.speedTestTarget}
+        servers={currentProfile?.servers || [selectedServer]}
+        username={currentProfile?.username}
+        password={currentProfile?.password}
       />
 
       <ContextMenu 
@@ -596,29 +459,12 @@ function App() {
 
       {isRendering && (
         <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          pointerEvents: 'all'
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, pointerEvents: 'all'
         }}>
           <div style={{
-            padding: '20px 40px',
-            backgroundColor: 'var(--bg-secondary)',
-            border: '2px solid var(--section-accent)',
-            borderRadius: '8px',
-            fontSize: '1.2rem',
-            color: 'var(--text-primary)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '10px'
+            padding: '20px 40px', backgroundColor: 'var(--bg-secondary)', border: '2px solid var(--section-accent)',
+            borderRadius: '8px', fontSize: '1.2rem', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
               <RefreshCw size={24} className="spin" color={getSectionColor()} />
@@ -632,8 +478,8 @@ function App() {
       )}
 
       <DownloadManagerUI 
-        showDownloadManager={showDownloadManager}
-        setShowDownloadManager={setShowDownloadManager}
+        showDownloadManager={uiState.showDownloadManager}
+        setShowDownloadManager={uiState.setShowDownloadManager}
         downloads={downloads}
         cancelDownload={cancelDownload}
         removeDownload={removeDownload}
