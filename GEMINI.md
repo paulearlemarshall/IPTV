@@ -60,6 +60,37 @@ A sophisticated background downloading system featuring:
 
 ---
 
+## 📂 Codebase Inventory
+
+### Backend (Electron Main Process)
+Located in the `electron/` root:
+- **`main.js`**: Application entry point. Manages window lifecycle, IPC handlers, and global state.
+- **`chromecastManager.js`**: Handles device discovery, local stream proxying, and adaptive HLS transcoding (1080p/720p).
+- **`downloadManager.js`**: Manages the sequential download queue, speed tracking, and protocol selection.
+- **`xcApiProxy.js`**: Proxies requests to XC APIs, handling authentication and bypassing CORS/SSL issues.
+- **`configManager.js`**: Manages user profiles, credentials, and persistent settings via `config.ini`.
+- **`imageManager.js`**: Implements local MD5-based caching for channel logos and posters.
+- **`vlcManager.js`**: Logic for spawning and controlling external VLC media player instances.
+- **`preload.js`**: The secure bridge between the main process and the React UI.
+
+### Frontend (React Renderer Process)
+Located in `electron/src/`:
+- **`App.jsx`**: Main UI coordinator. Handles routing between Live, VOD, and Series sections.
+- **`components/`**: 
+    - `Sidebar.jsx`: Dynamic category navigation with "★ Favorites" integration.
+    - `StreamCard.jsx`: High-performance tile component for displaying streams.
+    - `VideoPlayer.jsx`: Internal HLS/MP4 player with custom controls.
+    - `DownloadManagerUI.jsx`: Real-time monitoring and control of active downloads.
+    - `FlipBookView.jsx`: Specialized layout for browsing series seasons and episodes.
+- **`hooks/`**: 
+    - `useXCApi.js`: Encapsulates data fetching and caching logic.
+    - `useFavorites.js`: Real-time state management for the star system.
+    - `useFilteredStreams.js`: Handles global search and client-side filtering.
+- **`utils/`**:
+    - `xc.js`: Helper functions for parsing XC API responses and durations.
+
+---
+
 ## 🛠 How to Run (Development)
 
 1. Navigate to the `electron` directory:

@@ -1,10 +1,24 @@
 import { useState, useEffect } from 'react';
 
+const TRANSCODER_DEFAULTS = {
+    enabled: false,
+    intelligent: true,
+    preset: 'ultrafast',
+    tune: 'zerolatency',
+    hls_time: 4,
+    hls_list_size: 6,
+    ladder: [
+        { id: 'v0', res: '1920:1080', bitrate: '6000k', level: '4.0' },
+        { id: 'v1', res: '1280:720', bitrate: '3000k', level: '3.1' }
+    ]
+};
+
 export function useChromecast() {
     const [castDevices, setCastDevices] = useState(['None']);
     const [selectedCastDevice, setSelectedCastDevice] = useState('None');
     const [availableIps, setAvailableIps] = useState([]);
     const [selectedProxyIp, setSelectedProxyIp] = useState('');
+    const [transcoderSettings, setTranscoderSettings] = useState(TRANSCODER_DEFAULTS);
 
     useEffect(() => {
         const initChromecast = async () => {
@@ -39,6 +53,8 @@ export function useChromecast() {
         setSelectedCastDevice,
         availableIps,
         selectedProxyIp,
-        setSelectedProxyIp
+        setSelectedProxyIp,
+        transcoderSettings,
+        setTranscoderSettings
     };
 }

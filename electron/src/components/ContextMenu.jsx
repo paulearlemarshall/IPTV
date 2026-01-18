@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Copy } from 'lucide-react';
 import StarRating from './StarRating';
 
@@ -9,9 +9,28 @@ const ContextMenu = ({
   currentProfile,
   selectedServer,
   getXcLogoUrl,
-  copyToClipboard,
-  isLoading
+  copyToClipboard
 }) => {
+  const menuRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useLayoutEffect(() => {
+    if (contextMenu && menuRef.current) {
+      const menuRect = menuRef.current.getBoundingClientRect();
+      let top = contextMenu.mouseY;
+      let left = contextMenu.mouseX;
+
+      if (left + menuRect.width > window.innerWidth) {
+        left = window.innerWidth - menuRect.width - 10;
+      }
+      if (top + menuRect.height > window.innerHeight) {
+        top = window.innerHeight - menuRect.height - 10;
+      }
+
+      setPos({ top, left });
+    }
+  }, [contextMenu]);
+
   if (!contextMenu) return null;
 
   const isEpisode = !!contextMenu.stream.episode_num;
@@ -20,7 +39,16 @@ const ContextMenu = ({
   const info = contextMenu.info;
 
   return (
-    <div className="context-menu" style={{ top: contextMenu.mouseY, left: contextMenu.mouseX }} onClick={e => e.stopPropagation()}>
+    <div 
+      ref={menuRef}
+      className="context-menu" 
+      style={{ 
+        top: pos.top, 
+        left: pos.left,
+        visibility: pos.top === 0 ? 'hidden' : 'visible'
+      }} 
+      onClick={e => e.stopPropagation()}
+    >
         <div className="context-menu-item" onClick={() => copyToClipboard(finalUrl)}><Copy size={14} /> <span>Copy Stream URL</span></div>
         {finalLogoUrl && <div className="context-menu-item" onClick={() => copyToClipboard(finalLogoUrl)}><Copy size={14} /> <span>Copy Logo URL</span></div>}
         <div className="context-menu-separator" />

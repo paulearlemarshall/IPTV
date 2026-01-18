@@ -10,6 +10,7 @@ const { initXCHandlers } = require('./xcApiProxy');
 const { initDownloadHandlers } = require('./downloadManager');
 const { initVLCHandlers } = require('./vlcManager');
 const { initErrorHandlers } = require('./errorLogger');
+const { initStressTestHandlers } = require('./stressTestManager');
 
 // --- Initialize Error Handling ---
 initErrorHandlers();
@@ -62,6 +63,7 @@ const createWindow = () => {
   initXCHandlers(ipcMain);
   initDownloadHandlers(ipcMain, () => mainWindow, getProfileCachePaths);
   initVLCHandlers(ipcMain, configManager);
+  initStressTestHandlers(ipcMain, mainWindow, configManager.getConfig);
 };
 
 app.on('ready', createWindow);

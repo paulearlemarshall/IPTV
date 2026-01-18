@@ -10,6 +10,8 @@ import DownloadManagerUI from './components/DownloadManagerUI';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import ContextMenu from './components/ContextMenu';
+import TranscoderSettingsModal from './components/TranscoderSettingsModal';
+import StressTestMonitor from './components/StressTestMonitor';
 import { useXCApi } from './hooks/useXCApi';
 import { useDownloadManager } from './hooks/useDownloadManager';
 import { useFavorites } from './hooks/useFavorites';
@@ -44,6 +46,10 @@ function App() {
   const [lastCategoryClick, setLastCategoryClick] = useState({ id: null, timestamp: 0 });
   const [flipBookMode, setFlipBookMode] = useState(false);
   const [flipBookIndex, setFlipBookIndex] = useState(0);
+  const [showTranscoderSettings, setShowTranscoderSettings] = useState(false);
+  const [stressTestMode, setStressTestMode] = useState(false);
+  const [showStressTestMonitor, setShowStressTestMonitor] = useState(false);
+  const [stressTestStreamUrl, setStressTestStreamUrl] = useState(null);
 
   // Use the XC API hook
   const xcApi = useXCApi({ apiDebug });
@@ -101,14 +107,14 @@ function App() {
     setSelectedCastDevice,
     availableIps,
     selectedProxyIp,
-    setSelectedProxyIp
+    setSelectedProxyIp,
+    transcoderSettings,
+    setTranscoderSettings
   } = useChromecast();
 
   // Use Settings hook
   const {
     ffmpegPath,
-    useTranscodeProxy,
-    setUseTranscodeProxy,
     loadSettings,
     handleVlcPathChange,
     handleFfmpegPathChange
@@ -200,7 +206,7 @@ function App() {
   // Use Player hook
   const {
     currentStream,
-    playStream,
+    playStream: playStreamOriginal,
     closePlayer
   } = usePlayer({
     playerMode,
@@ -209,10 +215,44 @@ function App() {
     currentProfile,
     selectedServer,
     selectedProxyIp,
-    useTranscodeProxy,
+    transcoderSettings,
     ffmpegPath,
     fetchSeriesInfo
   });
+
+  const playStream = (stream, type) => {
+    if (stressTestMode) {
+      // Build stream URL similar to how usePlayer/playStream does it, but we need it here.
+      // Actually usePlayer handles constructing the URL from the stream object. 
+      // It's better if we just use the logic from usePlayer but for getting the URL. 
+      // However, duplication is bad.
+      // Let's see if we can just get the URL.
+      // For now, let's construct it manually since it's standard XC.
+      const id = stream.stream_id || stream.series_id || stream.id;
+      const container = stream.container_extension || 'ts'; // Default to ts
+      // Live/VOD logic
+      let finalUrl = '';
+      if (selectedSection === 'live') {
+          finalUrl = `${selectedServer}/live/${currentProfile.username}/${currentProfile.password}/${id}.ts`;
+      } else if (selectedSection === 'vod') {
+          finalUrl = `${selectedServer}/movie/${currentProfile.username}/${currentProfile.password}/${id}.${container}`;
+      } else {
+        // Series logic usually complicated (needs episode).
+        // If type is 'episode', stream is an episode object.
+        if (type === 'episode' || stream.episode_num) {
+            finalUrl = `${selectedServer}/series/${currentProfile.username}/${currentProfile.password}/${id}.${container}`;
+        } else {
+            setStatus("Stress test supports individual streams/episodes only.");
+            return;
+        }
+      }
+
+      setStressTestStreamUrl(finalUrl);
+      setShowStressTestMonitor(true);
+    } else {
+      playStreamOriginal(stream, type);
+    }
+  };
 
   // --- Effects ---
 
@@ -395,8 +435,10 @@ function App() {
         setYearFilter={setYearFilter}
         handleFfmpegPathChange={handleFfmpegPathChange}
         ffmpegPath={ffmpegPath}
-        useTranscodeProxy={useTranscodeProxy}
-        setUseTranscodeProxy={setUseTranscodeProxy}
+        transcoderSettings={transcoderSettings}
+        setShowTranscoderSettings={setShowTranscoderSettings}
+        stressTestMode={stressTestMode}
+        setStressTestMode={setStressTestMode}
       />
 
       <div className="main-content">
@@ -532,6 +574,20 @@ function App() {
       {currentStream && <VideoPlayer url={currentStream.url} title={currentStream.name || currentStream.title} onClose={closePlayer} />}
 
       <AccountModal accountInfo={accountInfo} clearAccountInfo={clearAccountInfo} />
+
+      <TranscoderSettingsModal 
+        isOpen={showTranscoderSettings} 
+        onClose={() => setShowTranscoderSettings(false)}
+        settings={transcoderSettings}
+        onSave={setTranscoderSettings}
+      />
+
+      <StressTestMonitor 
+        isOpen={showStressTestMonitor}
+        onClose={() => setShowStressTestMonitor(false)}
+        streamUrl={stressTestStreamUrl}
+        settings={transcoderSettings}
+      />
 
       <ContextMenu 
         contextMenu={contextMenu}

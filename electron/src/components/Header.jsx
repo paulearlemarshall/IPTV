@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, RefreshCw, Play, Search, X, User, Bug, Calendar, ArrowDown, BookOpen, Film, Dna } from 'lucide-react';
+import { Settings, RefreshCw, Play, Search, X, User, Bug, Calendar, ArrowDown, BookOpen, Film, Dna, Thermometer } from 'lucide-react';
 
 const Header = ({
   currentProfile,
@@ -46,8 +46,10 @@ const Header = ({
   setYearFilter,
   handleFfmpegPathChange,
   ffmpegPath,
-  useTranscodeProxy,
-  setUseTranscodeProxy
+  transcoderSettings,
+  setShowTranscoderSettings,
+  stressTestMode,
+  setStressTestMode
 }) => {
   return (
     <div className="header">
@@ -232,20 +234,39 @@ const Header = ({
 
         <button
           className="btn"
-          onClick={() => ffmpegPath && setUseTranscodeProxy(!useTranscodeProxy)}
+          onClick={() => ffmpegPath && setShowTranscoderSettings(true)}
           style={{
               background: 'transparent',
               border: 'none',
-              color: !ffmpegPath ? '#555' : (useTranscodeProxy ? '#ff6b6b' : '#909296'),
+              color: !ffmpegPath ? '#555' : (transcoderSettings.enabled ? '#ffd43b' : '#909296'),
               display: 'flex',
               alignItems: 'center',
               padding: '4px',
               cursor: ffmpegPath ? 'pointer' : 'not-allowed',
               opacity: ffmpegPath ? 1 : 0.5
           }}
-          title={!ffmpegPath ? 'Set FFmpeg path first' : (useTranscodeProxy ? 'Transcode Proxy: ON' : 'Transcode Proxy: OFF')}
+          title={!ffmpegPath ? 'Set FFmpeg path first' : (transcoderSettings.enabled ? 'Transcoder: ON (Click for Settings)' : 'Transcoder: OFF (Click for Settings)')}
         >
           <Dna size={16} />
+        </button>
+
+        <button
+          className="btn"
+          onClick={() => ffmpegPath && setStressTestMode(!stressTestMode)}
+          style={{
+              background: stressTestMode ? '#e03131' : 'transparent',
+              border: 'none',
+              borderRadius: '4px',
+              color: stressTestMode ? '#fff' : (!ffmpegPath ? '#555' : '#909296'),
+              display: 'flex',
+              alignItems: 'center',
+              padding: '4px',
+              cursor: ffmpegPath ? 'pointer' : 'not-allowed',
+              opacity: ffmpegPath ? 1 : 0.5
+          }}
+          title={!ffmpegPath ? 'Set FFmpeg path first' : (stressTestMode ? 'Stress Test Mode: ON (Click stream to test)' : 'Stress Test Mode: OFF')}
+        >
+          <Thermometer size={16} />
         </button>
 
         <input type="range" min="100" max="400" value={tileSize} onChange={(e) => setTileSize(Number(e.target.value))} style={{ width: '60px' }} />

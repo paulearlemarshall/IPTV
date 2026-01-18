@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   castScan: () => ipcRenderer.invoke('cast-scan'),
   getAvailableIps: () => ipcRenderer.invoke('get-available-ips'),
   castPlay: (device, url, metadata, proxyIp, streamType, contentType) => ipcRenderer.invoke('cast-play', device, url, metadata, proxyIp, streamType, contentType),
-  castPlayFfmpeg: (device, url, metadata, proxyIp) => ipcRenderer.invoke('cast-play-ffmpeg', device, url, metadata, proxyIp),
+  castPlayFfmpeg: (device, url, metadata, proxyIp, settings) => ipcRenderer.invoke('cast-play-ffmpeg', device, url, metadata, proxyIp, settings),
   castStop: (device) => ipcRenderer.invoke('cast-stop', device),
   xcApi: (data) => ipcRenderer.invoke('xc-api', data),
   checkImageCache: (data) => ipcRenderer.invoke('check-image-cache', data),
@@ -24,5 +24,15 @@ contextBridge.exposeInMainWorld('api', {
   startDownload: (data) => ipcRenderer.invoke('start-download', data),
   cancelDownload: (data) => ipcRenderer.invoke('cancel-download', data),
   onDownloadProgress: (callback) => ipcRenderer.on('download-progress', (event, data) => callback(data)),
-  removeDownloadProgressListeners: () => ipcRenderer.removeAllListeners('download-progress')
+  removeDownloadProgressListeners: () => ipcRenderer.removeAllListeners('download-progress'),
+  
+  // Stress Test API
+  stressTestStart: (url, settings) => ipcRenderer.invoke('stress-test-start', url, settings),
+  stressTestStop: () => ipcRenderer.invoke('stress-test-stop'),
+  onStressTestStats: (callback) => ipcRenderer.on('stress-test-stats', (event, stats) => callback(stats)),
+  onStressTestStopped: (callback) => ipcRenderer.on('stress-test-stopped', (event, code) => callback(code)),
+  removeStressTestListeners: () => {
+    ipcRenderer.removeAllListeners('stress-test-stats');
+    ipcRenderer.removeAllListeners('stress-test-stopped');
+  }
 });

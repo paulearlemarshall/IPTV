@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 
 export function useSettings({ setStatus }) {
     const [ffmpegPath, setFfmpegPath] = useState(null);
-    const [useTranscodeProxy, setUseTranscodeProxy] = useState(false);
 
     const loadSettings = useCallback(async () => {
         const config = await window.api.config.load();
@@ -39,8 +38,6 @@ export function useSettings({ setStatus }) {
 
     return {
         ffmpegPath,
-        useTranscodeProxy,
-        setUseTranscodeProxy,
         loadSettings,
         handleVlcPathChange,
         handleFfmpegPathChange

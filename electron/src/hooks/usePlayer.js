@@ -8,7 +8,7 @@ export function usePlayer({
     currentProfile,
     selectedServer,
     selectedProxyIp,
-    useTranscodeProxy,
+    transcoderSettings,
     ffmpegPath,
     fetchSeriesInfo
 }) {
@@ -54,15 +54,15 @@ export function usePlayer({
                 type: metaType
             };
 
-            if (useTranscodeProxy && ffmpegPath) {
-                window.api.castPlayFfmpeg(device, finalUrl, castMetadata, selectedProxyIp);
+            if (transcoderSettings.enabled && ffmpegPath) {
+                window.api.castPlayFfmpeg(device, finalUrl, castMetadata, selectedProxyIp, transcoderSettings);
             } else {
                 window.api.castPlay(device, finalUrl, castMetadata, selectedProxyIp, streamType, contentType);
             }
         } else {
             window.api.launchVLC(finalUrl, null, stream.name || stream.title);
         }
-    }, [playerMode, selectedCastDevice, selectedSection, currentProfile, selectedServer, fetchSeriesInfo, selectedProxyIp, useTranscodeProxy, ffmpegPath]);
+    }, [playerMode, selectedCastDevice, selectedSection, currentProfile, selectedServer, fetchSeriesInfo, selectedProxyIp, transcoderSettings, ffmpegPath]);
 
     const closePlayer = useCallback(() => {
         setCurrentStream(null);
