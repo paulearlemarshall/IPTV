@@ -125,17 +125,6 @@ function App() {
     ? globalStreamsCache[selectedSection] 
     : streams;
 
-  // Trigger Global Search when query is typed
-  useEffect(() => {
-    if (searchQuery.length > 2 && !globalStreamsCache[selectedSection]) {
-        fetchAllStreams({
-            section: selectedSection,
-            server: selectedServer,
-            profile: currentProfile
-        });
-    }
-  }, [searchQuery, selectedSection, globalStreamsCache, selectedServer, currentProfile, fetchAllStreams]);
-
   // Use Filtered Streams hook
   const { visibleStreams, totalFilteredCount } = useFilteredStreams({
     streams: streamsToFilter,
@@ -272,9 +261,15 @@ function App() {
 
   useEffect(() => {
     if (currentProfile && selectedServer) {
+        // Fetch Categories
         fetchCategories('live');
         fetchCategories('vod');
         fetchCategories('series');
+
+        // Fetch All Streams (Background Cache)
+        fetchAllStreams({ section: 'live', server: selectedServer, profile: currentProfile });
+        fetchAllStreams({ section: 'vod', server: selectedServer, profile: currentProfile });
+        fetchAllStreams({ section: 'series', server: selectedServer, profile: currentProfile });
     }
   }, [currentProfile?.id, selectedServer]);
 
