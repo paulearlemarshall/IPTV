@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, RefreshCw, Play, Search, X, User, Bug, Calendar, ArrowDown, BookOpen, Film, Dna, Thermometer } from 'lucide-react';
+import { Settings, RefreshCw, Play, Search, X, User, Bug, Calendar, ArrowDown, BookOpen, Film, Dna, Thermometer, Timer } from 'lucide-react';
 
 const Header = ({
   currentProfile,
@@ -49,7 +49,9 @@ const Header = ({
   transcoderSettings,
   setShowTranscoderSettings,
   stressTestMode,
-  setStressTestMode
+  setStressTestMode,
+  speedTestMode,
+  setSpeedTestMode
 }) => {
   return (
     <div className="header">
@@ -221,13 +223,13 @@ const Header = ({
           onClick={handleFfmpegPathChange}
           style={{
               background: 'transparent',
-              border: 'none',
-              color: ffmpegPath ? '#40c057' : '#909296',
+              border: !ffmpegPath ? '1px solid #ff6b6b' : 'none',
+              color: ffmpegPath ? '#40c057' : '#ff6b6b',
               display: 'flex',
               alignItems: 'center',
               padding: '4px'
           }}
-          title={ffmpegPath ? `FFmpeg: ${ffmpegPath}` : 'Set FFmpeg Path'}
+          title={ffmpegPath ? `FFmpeg: ${ffmpegPath}` : 'Required: Click to set FFmpeg Path'}
         >
           <Film size={16} />
         </button>
@@ -267,6 +269,24 @@ const Header = ({
           title={!ffmpegPath ? 'Set FFmpeg path first' : (stressTestMode ? 'Stress Test Mode: ON (Click stream to test)' : 'Stress Test Mode: OFF')}
         >
           <Thermometer size={16} />
+        </button>
+
+        <button
+          className="btn"
+          onClick={() => setSpeedTestMode(!speedTestMode)}
+          style={{
+              background: speedTestMode ? '#3b5bdb' : 'transparent',
+              border: 'none',
+              borderRadius: '4px',
+              color: speedTestMode ? '#fff' : '#909296',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '4px',
+              cursor: 'pointer'
+          }}
+          title={speedTestMode ? 'Speed Test Mode: ON (Click VOD/Series to test)' : 'Speed Test Mode: OFF'}
+        >
+          <Timer size={16} />
         </button>
 
         <input type="range" min="100" max="400" value={tileSize} onChange={(e) => setTileSize(Number(e.target.value))} style={{ width: '60px' }} />
